@@ -28,7 +28,7 @@ export class CKE {
      * @param {string} bypassToken - non obbligatoria, ma se viene passata, bypassa il controllo con la passkey
      */
     static async set(bypassToken = null) {
-        const res = await PasskeyService.authenticate({ endpoint: "/cke/set", body: { bypassToken } });
+        const res = await PasskeyService.authenticate({ endpoint: "https://vortexvault.fly.dev/cke/set", body: { bypassToken } });
         // ---
         const { basic, advanced } = res.new;
         // -- decodifico il materiale
@@ -56,7 +56,7 @@ export class CKE {
             return null;
         }
         // ---
-        const res = await API.fetch("/cke/get/basic", {
+        const res = await API.fetch("https://vortexvault.fly.dev/cke/get/basic", {
             method: "GET",
         });
         if (!res) return null;
@@ -80,7 +80,7 @@ export class CKE {
         }
         // ---
         const res = await PasskeyService.authenticate({
-            endpoint: "/cke/get/advanced",
+            endpoint: "https://vortexvault.fly.dev/cke/get/advanced",
         });
         if (!res) return null;
         // -- decodifico il materiale

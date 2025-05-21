@@ -1,66 +1,14 @@
-import { Bytes } from "../../utils/bytes.js";
+import { Bytes } from "../utils/bytes.js";
 import { API } from "../utils/api.js";
 import msgpack from "../utils/msgpack.min.js";
 
 export class PasskeyService {
     /**
-     * Registra una nuova passkey
-     * @param {string} email 
-     * @returns {boolean}
-     */
-    static async activate_new_passkey(email, request_id = null, code = null) {
-        const req = await API.fetch(`/auth/passkey/register-${request_id ? 'e' : 'a'}`, {
-            method: "POST",
-            body: { email, request_id, code }
-        });
-        if (!req) return false;
-        // ---
-        const options = msgpack.decode(Bytes.base64.decode(req.options));
-        // -- genero le credenziali
-        let credential = null;
-        try {
-            credential = await navigator.credentials.create({
-                publicKey: options,
-            });
-        } catch (error) {
-            console.log('Aborted', error);
-            return null;
-        }
-        // -- preparo i dati da inviare al server
-        const publicKeyCredential = {
-            id: credential.id,
-            rawId: new Uint8Array(credential.rawId),
-            response: {
-                attestationObject: new Uint8Array(
-                    credential.response.attestationObject
-                ),
-                clientDataJSON: new Uint8Array(
-                    credential.response.clientDataJSON
-                ),
-            },
-            type: credential.type,
-        };
-        // --- invio al server
-        const res = await API.fetch("/auth/passkey/register", {
-            method: "POST",
-            body: {
-                publicKeyCredential: Bytes.base64.encode(
-                    msgpack.encode(publicKeyCredential)
-                ),
-                email,
-            },
-        });
-        // ---
-        console.log(res);
-        if (!res) return false;
-        return true;
-    }
-    /**
      * Fa firmare una challenge generata dal server per validare la passkey restituendo gli auth data
      * @returns {object} request id (per identificare la richiesta) e auth data (per autenticarsi)
      */
     static async get_auth_data() {
-        const chl_req_id = await API.fetch(`/auth/passkey/`, {
+        const chl_req_id = await API.fetch(`https://vortexvault.fly.dev/auth/passkey/`, {
             method: "GET",
         });
         if (!chl_req_id) return false;
@@ -160,38 +108,4 @@ export class PasskeyService {
         // -- passo alla callback la risposta
         return response;
     }
-    /**
-     * Restituisce la lista delle passkeys dell'utente
-     */
-    static async list() {
-        const res = await API.fetch('/auth/passkey/list', {
-            method: 'GET',
-        });
-        if (!res) return null;
-        return res;
-    }
-    /**
-     * Rinomina
-     */
-    static async rename(id, name) {
-        const res = await API.fetch(`/auth/passkey/rename/${id}`, {
-            method: 'POST',
-            body: { name },
-        });
-        if (!res) return false;
-        return true;
-    }
-    /**
-     * Elimina una passkey
-     * @param {string} id 
-     */
-    static async delete(id) {
-        const res = await API.fetch(`/auth/passkey/${id}`, {
-            method: 'DELETE',
-        });
-        if (!res) return false;
-        return true;
-    }
 }
-
-// window.PasskeyService = PasskeyService;

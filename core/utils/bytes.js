@@ -15,7 +15,7 @@ export class Bytes {
                     "="
                 );
             }
-            const binaryString = atob(base64);
+            const binaryString = self.atob(base64);
             return Uint8Array.from(binaryString, (c) => c.charCodeAt(0));
         },
         /**
@@ -24,7 +24,7 @@ export class Bytes {
          * @returns {string}
          */
         encode(buffer, urlsafe = false) {
-            const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+            const base64 = self.btoa(String.fromCharCode(...new Uint8Array(buffer)));
             return urlsafe
                 ? base64
                       .replace(/\+/g, "-")
@@ -292,5 +292,3 @@ export class Bytes {
         return result === 0;
     }
 }
-
-window.Bytes = Bytes;

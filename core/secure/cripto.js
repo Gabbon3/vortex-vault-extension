@@ -33,7 +33,7 @@ export class Cripto {
      * @returns {string|Uint8Array} - Byte generati nel formato specificato.
      */
     static random_bytes(size, encoding = null) {
-        const bytes = crypto.getRandomValues(new Uint8Array(size));
+        const bytes = self.crypto.getRandomValues(new Uint8Array(size));
         // -- se l'encoding è hex o base64, utilizzo la classe Bytes per la conversione
         return this.encoding(bytes, encoding);
     }
@@ -43,7 +43,7 @@ export class Cripto {
      * @returns {number} A number in the range [0, 1).
      */
     static random_ratio() {
-        const random_word = window.crypto.getRandomValues(new Uint32Array(1))[0];
+        const random_word = self.crypto.getRandomValues(new Uint32Array(1))[0];
         return random_word / 4294967296; // ~ 2 ** 32
     }
 
@@ -76,7 +76,7 @@ export class Cripto {
     static async hmac(message, key, options = {}) {
         const message_bytes = message instanceof Uint8Array ? message : new TextEncoder().encode(message);
         // ---
-        const crypto_key = await crypto.subtle.importKey(
+        const crypto_key = await self.crypto.subtle.importKey(
             'raw',
             key,
             { name: 'HMAC', hash: { name: options.algo || 'SHA-256' } },
@@ -84,7 +84,7 @@ export class Cripto {
             ['sign']
         );
         // -- genero l'HMAC
-        const hmac_buffer = await crypto.subtle.sign('HMAC', crypto_key, message_bytes);
+        const hmac_buffer = await self.crypto.subtle.sign('HMAC', crypto_key, message_bytes);
         // -- converto l'output nel formato desiderato (hex, base64 o Uint8Array)
         return this.encoding(new Uint8Array(hmac_buffer), options.encoding);
     }
@@ -98,7 +98,7 @@ export class Cripto {
      * @returns {Promise<string|Uint8Array>} - Hash del messaggio in formato specificato.
      */
     static async hash(message, options = {}) {
-        const hashBuffer = await crypto.subtle.digest(
+        const hashBuffer = await self.crypto.subtle.digest(
             { name: options.algorithm || 'SHA-256' },
             message instanceof Uint8Array ? message : new TextEncoder().encode(message)
         );
@@ -115,8 +115,8 @@ export class Cripto {
      * @returns {Uint8Array}
      */
     static async HKDF(ikm, salt, additionalInfo = new Uint8Array(), keyLen = 256) {
-        const hkdf = await crypto.subtle.importKey("raw", ikm, { name: "HKDF" }, false, ["deriveKey"]);
-        const key = await crypto.subtle.deriveKey(
+        const hkdf = await self.crypto.subtle.importKey("raw", ikm, { name: "HKDF" }, false, ["deriveKey"]);
+        const key = await self.crypto.subtle.deriveKey(
             {
                 name: "HKDF",
                 salt: salt,
@@ -128,55 +128,43 @@ export class Cripto {
             true,
             ["encrypt", "decrypt"]
         );
-        return new Uint8Array(await crypto.subtle.exportKey('raw', key));
+        return new Uint8Array(await self.crypto.subtle.exportKey('raw', key));
     }
 
     /**
      * Deriva una chiave crittografica da una password usando PBKDF2.
      * @param {string | Uint8Array} password - La password da usare per derivare la chiave.
      * @param {Uint8Array} salt - Il sale utilizzato nel processo di derivazione.
-     * @param {number} [iterations=16] - Il numero di iterazioni da eseguire.
-     * @param {number} [key_length=32] - La lunghezza della chiave derivata in byte.
-     * @param {string} [algo='SHA-256'] - L'algoritmo di hash da usare per PBKDF2 (default 'SHA-256').
+     * @param {number} [iterations=100000] - Il numero di iterazioni da eseguire.
+     * @param {number} [keyLength=32] - La lunghezza della chiave derivata in byte.
      * @returns {Promise<Uint8Array>} - La chiave derivata.
      */
-    static async derive_key(password, salt, iterations = 16, key_length = 32, algo = 'SHA-256') {
+    static async deriveKey(password, salt, iterations = 100000, keyLength = 32) {
         // -- converto la password in un Uint8Array
-        const password_buffer = password instanceof Uint8Array ? password : new TextEncoder().encode(password);
+        const passwordBuffer = password instanceof Uint8Array ? password : new TextEncoder().encode(password);
         // -- derivo la chiave con PBKDF2
-        const derived_key = await crypto.subtle.importKey(
+        const derivedKey = await self.crypto.subtle.importKey(
             'raw',
-            password_buffer,
+            passwordBuffer,
             { name: 'PBKDF2' },
             false,
             ['deriveKey']
         );
         // -- eseguo la derivazione con PBKDF2
-        const key = await crypto.subtle.deriveKey(
+        const key = await self.crypto.subtle.deriveKey(
             {
                 name: 'PBKDF2',
                 salt: salt,
                 iterations: iterations,
-                hash: { name: algo },
+                hash: "SHA-256",
             },
-            derived_key,
-            { name: 'AES-GCM', length: key_length * 8 }, // AES key length in bits
+            derivedKey,
+            { name: 'AES-GCM', length: keyLength * 8 }, // AES key length in bits
             true,
             ['encrypt', 'decrypt']
         );
         // -- restituisco la chiave derivata come Uint8Array
-        return new Uint8Array(await crypto.subtle.exportKey('raw', key));
-    }
-    /**
-     * Deriva una chiave crittografica da una password usando ARGON2.
-     * @param {string | Uint8Array} password - La password da usare per derivare la chiave.
-     * @param {Uint8Array} salt - Il sale utilizzato nel processo di derivazione.
-     */
-    static argon2(password, salt) {
-        // -- converto la password in un Uint8Array
-        const password_buffer = password instanceof Uint8Array ? password : new TextEncoder().encode(password);
-        // ---
-        return window.Argon2(password_buffer, salt);
+        return new Uint8Array(await self.crypto.subtle.exportKey('raw', key));
     }
 
     /**
@@ -253,14 +241,14 @@ export class Cripto {
             // definisco l'utilizzo della chiave
             const usages = key_type === 'RSA' ? ['encrypt', 'decrypt'] : ['sign', 'verify'];
             // Genera la coppia di chiavi
-            const key_pair = await crypto.subtle.generateKey(
+            const key_pair = await self.crypto.subtle.generateKey(
                 algorithm,
                 true, // Le chiavi possono essere esportate
                 usages, // Le operazioni per RSA, ECDSA e ED25519
             );
             // Estrai la chiave pubblica e privata in formato ArrayBuffer
-            const public_key = await crypto.subtle.exportKey('spki', key_pair.publicKey);
-            const private_key = await crypto.subtle.exportKey('pkcs8', key_pair.privateKey);
+            const public_key = await self.crypto.subtle.exportKey('spki', key_pair.publicKey);
+            const private_key = await self.crypto.subtle.exportKey('pkcs8', key_pair.privateKey);
             // Converte le chiavi in formato PEM
             return {
                 public: as_pem ? Bytes.pem.encode(public_key, 'PUBLIC KEY') : public_key,
@@ -272,5 +260,3 @@ export class Cripto {
         }
     }
 }
-
-window.Cripto = Cripto;

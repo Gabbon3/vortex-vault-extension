@@ -18,7 +18,7 @@ export class AES256GCM {
             const hash = [...key_input].join('');
             if (this.keyMap.has(hash)) return this.keyMap.get(hash);
             // -- se non lo è importo la cripto key e metto in cache
-            const key = await crypto.subtle.importKey(
+            const key = await self.crypto.subtle.importKey(
                 "raw",
                 key_input,
                 { name: "AES-GCM" },
@@ -39,11 +39,11 @@ export class AES256GCM {
      */
     static async encrypt(data, key_buffer) {
         // -- genero un nonce casuale di 12 byte
-        const nonce = crypto.getRandomValues(new Uint8Array(12));
+        const nonce = self.crypto.getRandomValues(new Uint8Array(12));
         // -- importo la chiave
         const key = await this.resolve_key(key_buffer);
         // -- cifro i dati usando AES-GCM
-        const cipher = await crypto.subtle.encrypt(
+        const cipher = await self.crypto.subtle.encrypt(
             {
                 name: 'AES-GCM',
                 iv: nonce,
@@ -72,7 +72,7 @@ export class AES256GCM {
         const key = await this.resolve_key(key_buffer);
         // -- cifro i dati usando AES-GCM
         try {
-            const decrypted = await crypto.subtle.decrypt(
+            const decrypted = await self.crypto.subtle.decrypt(
                 {
                     name: 'AES-GCM',
                     iv: nonce,
@@ -87,5 +87,3 @@ export class AES256GCM {
         }
     }
 }
-
-window.AES256GCM = AES256GCM;

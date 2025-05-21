@@ -1,5 +1,3 @@
-import { Windows } from "./windows.js";
-import { CError } from "./error.js";
 import { SHIV } from "../secure/SHIV.browser.js";
 
 export class API {
@@ -21,7 +19,6 @@ export class API {
             type.content_type = type.content_type || 'json';
             type.return_type = type.return_type || 'json';
             const loader = options.loader === true;
-            if (loader) Windows.loader(true);
             // -- imposto il metodo di autenticazione se presente
             if (options.auth) {
                 options.headers['x-authentication-method'] = options.auth;
@@ -65,8 +62,7 @@ export class API {
                 };
                 console.warn(`errore nella fetch:`, error);
                 API.recent = error;
-                if (options.hide_log !== true) CError.check(error); // -- lancio un errore se la risposta non è valida
-                if (loader) Windows.loader(false);
+                if (options.hide_log !== true) console.error(error); // -- lancio un errore se la risposta non è valida
                 return null;
             }
             // -- restituisco il dato in base al tipo di ritorno richiesto
@@ -87,10 +83,8 @@ export class API {
                     console.warn("tipo di dato non supportato.");
                     break;
             }
-            if (loader) Windows.loader(false);
             return result;
         } catch (error) {
-            Windows.loader(false);
             // -- gestisco eventuali errori nella chiamata
             console.warn(`fetch error: `, error);
             return null;
@@ -112,5 +106,3 @@ export class API {
         return formData;
     }
 }
-
-window.API = API;

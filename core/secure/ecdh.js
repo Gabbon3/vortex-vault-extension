@@ -10,7 +10,7 @@ export class ECDH {
      */
     static async generate_keys(curve = 'P-256') {
         // -- genero la coppia di chiavi ECDH usando la curva P-256
-        const key_pair = await window.crypto.subtle.generateKey(
+        const key_pair = await self.self.crypto.subtle.generateKey(
             {
                 name: "ECDH",
                 namedCurve: curve,
@@ -19,8 +19,8 @@ export class ECDH {
             ["deriveKey", "deriveBits"]
         );
         // -- esporto le chiavi
-        const exported_public_key = await window.crypto.subtle.exportKey("raw", key_pair.publicKey);
-        const exported_private_key = await window.crypto.subtle.exportKey("pkcs8", key_pair.privateKey);
+        const exported_public_key = await self.self.crypto.subtle.exportKey("raw", key_pair.publicKey);
+        const exported_private_key = await self.self.crypto.subtle.exportKey("pkcs8", key_pair.privateKey);
         // -- restituisco le chiavi
         return {
             public_key: [key_pair.publicKey, new Uint8Array(exported_public_key)],
@@ -36,7 +36,7 @@ export class ECDH {
      */
     static async import_public_key(public_key, curve = 'P-256') {
         // -- importo la chiave pubblica ricevuta in formato SPKI
-        return await window.crypto.subtle.importKey(
+        return await self.self.crypto.subtle.importKey(
             "raw", // - formato della chiave
             public_key, // - la chiave pubblica in formato Uint8Array
             {
@@ -55,7 +55,7 @@ export class ECDH {
      * @returns {Promise<CryptoKey>} La chiave privata importata come CryptoKey.
      */
     static async import_private_key(private_key_bytes, curve = 'P-256') {
-        return window.crypto.subtle.importKey(
+        return self.self.crypto.subtle.importKey(
             "pkcs8", // - il formato
             private_key_bytes, // - chiave privata come Uint8Array
             {
@@ -75,7 +75,7 @@ export class ECDH {
      */
     static async derive_shared_secret(private_key, public_key) {
         // -- derivo la chiave condivisa utilizzando la chiave privata e la chiave pubblica
-        const shared_secret = await window.crypto.subtle.deriveBits(
+        const shared_secret = await self.self.crypto.subtle.deriveBits(
             {
                 name: "ECDH",
                 public: public_key,
@@ -93,7 +93,7 @@ export class ECDH {
      * @returns {Promise<Uint8Array>} La chiave privata esportata come Uint8Array.
      */
     static async export_private_key(private_key) {
-        const exported_private_key = await window.crypto.subtle.exportKey("pkcs8", private_key);
+        const exported_private_key = await self.self.crypto.subtle.exportKey("pkcs8", private_key);
         return new Uint8Array(exported_private_key);
     }
 }
