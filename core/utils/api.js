@@ -62,7 +62,7 @@ export class API {
                 };
                 console.warn(`errore nella fetch:`, error);
                 API.recent = error;
-                if (options.hide_log !== true) console.error(error); // -- lancio un errore se la risposta non è valida
+                console.error(error); // -- lancio un errore se la risposta non è valida
                 return null;
             }
             // -- restituisco il dato in base al tipo di ritorno richiesto

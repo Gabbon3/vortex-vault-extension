@@ -5,6 +5,7 @@ import { LocalStorage } from "../utils/local.js";
 import { API } from "../utils/api.js";
 import { CKE } from "../utils/cke.public.util.js";
 import { SHIV } from "../secure/SHIV.browser.js";
+import { Config } from "../../lib/config.js";
 
 export class AuthService {
     /**
@@ -18,7 +19,7 @@ export class AuthService {
         // -- genero la coppia di chiavi
         const publicKeyHex = await SHIV.generateKeyPair();
         // ---
-        const res = await API.fetch('https://vortexvault.fly.dev/auth/signin', {
+        const res = await API.fetch(`${Config.origin}/auth/signin`, {
             method: 'POST',
             body: {
                 email,

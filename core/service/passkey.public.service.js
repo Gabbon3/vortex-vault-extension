@@ -1,6 +1,7 @@
 import { Bytes } from "../utils/bytes.js";
 import { API } from "../utils/api.js";
 import msgpack from "../utils/msgpack.min.js";
+import { Config } from "../../lib/config.js";
 
 export class PasskeyService {
     /**
@@ -8,7 +9,7 @@ export class PasskeyService {
      * @returns {object} request id (per identificare la richiesta) e auth data (per autenticarsi)
      */
     static async get_auth_data() {
-        const chl_req_id = await API.fetch(`https://vortexvault.fly.dev/auth/passkey/`, {
+        const chl_req_id = await API.fetch(`${Config.origin}/auth/passkey/`, {
             method: "GET",
         });
         if (!chl_req_id) return false;
