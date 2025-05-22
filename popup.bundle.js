@@ -2309,6 +2309,13 @@ ${base64}
     }
   };
 
+  // lib/config.js
+  var Config = class {
+    static dev = true;
+    // ---
+    static origin = this.dev ? "http://localhost:3000" : "https://vortexvault.fly.dev";
+  };
+
   // core/secure/ecdh.js
   var ECDH = class {
     /**
@@ -2530,7 +2537,7 @@ ${base64}
             console.warn("tipo di contenuto non gestito.");
             return null;
         }
-        const response = await fetch(endpoint, options);
+        const response = await fetch(`${Config.origin}${endpoint}`, options);
         if (!response.ok) {
           const error = {
             status: response.status,
@@ -2580,13 +2587,6 @@ ${base64}
     }
   };
 
-  // lib/config.js
-  var Config = class {
-    static dev = true;
-    // ---
-    static origin = this.dev ? "http://localhost:3000" : "https://vortexvault.fly.dev";
-  };
-
   // core/service/passkey.public.service.js
   var PasskeyService = class {
     /**
@@ -2594,7 +2594,7 @@ ${base64}
      * @returns {object} request id (per identificare la richiesta) e auth data (per autenticarsi)
      */
     static async get_auth_data() {
-      const chl_req_id = await API.fetch(`${Config.origin}/auth/passkey/`, {
+      const chl_req_id = await API.fetch(`/auth/passkey/`, {
         method: "GET"
       });
       if (!chl_req_id) return false;
@@ -2694,7 +2694,7 @@ ${base64}
      * @param {string} bypassToken - non obbligatoria, ma se viene passata, bypassa il controllo con la passkey
      */
     static async set(bypassToken = null) {
-      const res = await PasskeyService.authenticate({ endpoint: `${Config.origin}/cke/set`, body: { bypassToken } });
+      const res = await PasskeyService.authenticate({ endpoint: `/cke/set`, body: { bypassToken } });
       const { basic, advanced } = res.new;
       const basicBytes = Bytes.hex.decode(basic);
       const advancedBytes = Bytes.hex.decode(advanced);
@@ -2716,7 +2716,7 @@ ${base64}
         console.warn("No local material founded");
         return null;
       }
-      const res = await API.fetch(`${Config.origin}/cke/get/basic`, {
+      const res = await API.fetch(`/cke/get/basic`, {
         method: "GET"
       });
       if (!res) return null;
@@ -2736,7 +2736,7 @@ ${base64}
         return null;
       }
       const res = await PasskeyService.authenticate({
-        endpoint: `${Config.origin}/cke/get/advanced`
+        endpoint: `/cke/get/advanced`
       });
       if (!res) return null;
       const cookieKey = Bytes.hex.decode(res.key);
@@ -2762,42 +2762,44 @@ ${base64}
      */
     static async init() {
       const sessionSharedSecret = SessionStorage.get("shared-secret");
-      const userIsLogged = LocalStorage.exist("shared-secret");
-      if (sessionSharedSecret || !userIsLogged) return true;
+      if (sessionSharedSecret) {
+        console.log("Session alreay ok");
+        return true;
+      }
       const keyBasic = await CKE.getBasic();
       if (!keyBasic) return false;
       const sharedSecret = await LocalStorage.get("shared-secret", keyBasic);
       if (!sharedSecret) return false;
       SessionStorage.set("shared-secret", sharedSecret);
       console.log("SHIV started");
-      return true;
+      return this.startSession();
     }
     /**
      * Tenta di avviare automaticamente una sessione
      * @returns {number} true è stato loggato e la sessione è stata attivata, 0 già loggato, -1 nuovo access token non ottenuto, -2 nessuna chiave restituita, false sessione non attivata
      */
-    static async startSession() {
+    static async startSession(ckeKeyBasic) {
       const session_storage_init = SessionStorage.get("master-key") !== null;
       const signin_need = !session_storage_init;
       if (!signin_need) return 0;
-      const ckeKeyAdvanced = await CKE.getAdvanced();
-      if (!ckeKeyAdvanced) {
+      if (!ckeKeyBasic) ckeKeyBasic = await CKE.getBasic();
+      if (!ckeKeyBasic) {
         console.warn("CKE non ottenuta.");
         return false;
       }
-      const initialized = await this.initSessionVariables(ckeKeyAdvanced);
+      const initialized = await this.initSessionVariables(ckeKeyBasic);
       return initialized;
     }
     /**
      * Imposta la chiave master dell'utente nel session storage
-     * @param {Uint8Array} ckeKeyAdvanced 
+     * @param {Uint8Array} ckeKeyAdvanced
      */
     static async initSessionVariables(ckeKeyAdvanced) {
       const master_key = await LocalStorage.get("master-key", ckeKeyAdvanced);
       const salt = await LocalStorage.get("salt", ckeKeyAdvanced);
       const email = await LocalStorage.get("email-utente");
       if (!master_key) return false;
-      SessionStorage.set("cke", ckeKeyAdvanced);
+      SessionStorage.set("cke-key-basic", ckeKeyAdvanced);
       SessionStorage.set("master-key", master_key);
       SessionStorage.set("salt", salt);
       SessionStorage.set("email", email);
@@ -2805,14 +2807,14 @@ ${base64}
     }
     /**
      * Esegue l'accesso
-     * @param {string} email 
-     * @param {string} password 
+     * @param {string} email
+     * @param {string} password
      * @param {boolean} [activate_lse=false] true per abilitare il protocollo lse
      * @returns {boolean}
      */
     static async signin(email, password) {
       const publicKeyHex = await SHIV.generateKeyPair();
-      const res = await API.fetch(`${Config.origin}/auth/signin`, {
+      const res = await API.fetch(`/auth/signin`, {
         method: "POST",
         body: {
           email,
@@ -2831,8 +2833,8 @@ ${base64}
       const master_key = await Cripto.deriveKey(password, salt);
       await LocalStorage.set("email-utente", email);
       await LocalStorage.set("password-utente", password, master_key);
-      await LocalStorage.set("master-key", master_key, keyAdvanced);
-      await LocalStorage.set("salt", salt, keyAdvanced);
+      await LocalStorage.set("master-key", master_key, keyBasic);
+      await LocalStorage.set("salt", salt, keyBasic);
       SessionStorage.set("master-key", master_key);
       SessionStorage.set("salt", salt);
       SessionStorage.set("uid", res.uid);
@@ -2840,25 +2842,288 @@ ${base64}
     }
   };
 
+  // core/service/vault.local.js
+  var VaultLocal = class {
+    // Implement the necessary methods for interacting with the local vault
+    static async save(vaults, key = null) {
+      await LocalStorage.set("vaults", vaults, key);
+    }
+    /**
+     * Restituisce un vault dal localstorage
+     * @param {Uint8Array} key 
+     * @returns {Array<Object>}
+     */
+    static async get(key = null) {
+      return await LocalStorage.get("vaults", key) ?? [];
+    }
+    /**
+     * Elimina un vault sul localstorage
+     * @param {string} vault_id 
+     */
+    static delete(vault_id, key = null) {
+      const vaults = this.get(key);
+      const index = this.get_index(vaults, vault_id);
+      vaults.splice(index, 1);
+      this.save(vaults);
+    }
+    /**
+     * Restituisce l'index di un vault
+     * @param {Array<Object>} vaults 
+     * @param {string} vault_id 
+     * @returns {string}
+     */
+    static get_index(vaults, vault_id) {
+      return vaults.findIndex((vault) => vault.id === vault_id);
+    }
+    /**
+     * Aggiorna tutti i vaults passati o li aggiunge se non esistono
+     * @param {Array<Object>} vaults 
+     * @param {Uint8Array} key 
+     */
+    static async sync_update(vaults, key) {
+      const local_vaults = await this.get(key);
+      for (const vault of vaults) {
+        const index = this.get_index(local_vaults, vault.id);
+        index !== -1 ? local_vaults[index] = vault : local_vaults.push(vault);
+      }
+      await this.save(local_vaults, key);
+      return local_vaults;
+    }
+    /**
+     * Aggiorna il singolo vault
+     * @param {Object} vault 
+     * @param {Uint8Array} key 
+     */
+    static update(vault, key) {
+      const vault_id = vault.id;
+      const local_vaults = this.get(key);
+      const index = this.get_index(local_vaults, vault_id);
+      index !== -1 ? local_vaults.push(vault) : local_vaults[index] = vault;
+      this.save(local_vaults);
+      return true;
+    }
+  };
+
+  // core/service/vault.service.js
+  var VaultService = class _VaultService {
+    static master_key = null;
+    static salt = null;
+    static vaults = [];
+    // Tempo da rimuovere da Date.now() per ottenere i vault piu recenti
+    static getDateDiff = 30 * 60 * 1e3;
+    /**
+     * 
+     */
+    static async init(full = false) {
+      const configured = await _VaultService.configSecrets();
+      if (!configured) return false;
+      const initialized = await _VaultService.syncronize(full);
+      if (initialized) {
+        console.log("Vault initialized");
+        return true;
+      }
+      return initialized;
+    }
+    /**
+     * Configura i segreti necessari ad utilizzare il vault
+     * @returns {boolean} - true se entrambi sono presenti
+     */
+    static async configSecrets() {
+      const ckeKeyAdvanced = SessionStorage.get("cke-key-basic");
+      if (ckeKeyAdvanced === null) return false;
+      this.master_key = await LocalStorage.get("master-key", ckeKeyAdvanced);
+      this.salt = await LocalStorage.get("salt", ckeKeyAdvanced);
+      return this.master_key && this.salt ? true : false;
+    }
+    /**
+     * Sincronizza e inizializza il Vault con il db
+     * @param {boolean} full - sincronizzazione completa true, false sincronizza solo il necessario
+     * @returns {boolean} true per processo completato con successo
+     */
+    static async syncronize(full = false) {
+      const configured = await this.configSecrets();
+      if (!configured || !this.master_key) return alert("Any Crypto Key founded");
+      const vault_update = await LocalStorage.get("vault-update") ?? null;
+      let selectFrom = null;
+      if (vault_update) selectFrom = new Date(Date.now() - this.getDateDiff);
+      try {
+        this.vaults = await VaultLocal.get(this.master_key);
+        const n_local_vaults = this.vaults.length;
+        const n_db_vaults = await this.count();
+        if (n_local_vaults > n_db_vaults) full = true;
+        const vaults_from_db = await this.get(full ? null : selectFrom);
+        if (vaults_from_db.length > 0) {
+          if (full) {
+            await VaultLocal.save(vaults_from_db, this.master_key);
+            this.vaults = vaults_from_db;
+          } else {
+            this.vaults = await VaultLocal.sync_update(vaults_from_db, this.master_key);
+          }
+        } else {
+          if (full) await VaultLocal.save([], this.master_key);
+        }
+      } catch (error) {
+        console.warn("Sync Error - Vault => ", error);
+        LocalStorage.remove("vault-update");
+        LocalStorage.remove("vaults");
+        return false;
+      }
+      return true;
+    }
+    /**
+     * Restituisce tutti i vault che sono stati aggiorati dopo una certa data
+     * @param {Date} updated_after - opzionale, se nullo restituirà tutti i vault
+     * @returns {Array<Object>} un array di oggetti vault
+     */
+    static async get(updated_after = null) {
+      let url = "/vaults";
+      if (updated_after) url += `?updated_after=${updated_after.toISOString()}`;
+      const res = await API.fetch(url, {
+        method: "GET"
+      });
+      if (!res) return null;
+      if (res.length > 0) LocalStorage.set("vault-update", /* @__PURE__ */ new Date());
+      return await this.decrypt_vaults(res) ? res : null;
+    }
+    /**
+     * Restituisce il numero totale di vault del db
+     * @returns {number}
+     */
+    static async count() {
+      const res = await API.fetch("/vaults/count", {
+        method: "GET"
+      });
+      if (!res) return 0;
+      return res.count;
+    }
+    /**
+     * Restituisce un vault tramite id
+     * @param {string} vault_id 
+     * @returns {Object}
+     */
+    static get_vault(vault_id) {
+      return this.vaults[this.get_index(vault_id)];
+    }
+    /**
+     * Restituisce l'index di un vault
+     * @param {Array<Object>} vaults 
+     * @param {string} vault_id 
+     * @returns {string}
+     */
+    static get_index(vault_id, vaults = this.vaults) {
+      return vaults.findIndex((vault) => vault.id === vault_id);
+    }
+    /**
+     * Cifra un vault
+     * @param {Object} vault 
+     * @param {Uint8Array} provided_salt 
+     * @returns {Uint8Array}
+     */
+    static async encrypt(vault, provided_salt = null, master_key = this.master_key) {
+      const salt = provided_salt || Cripto.random_bytes(16);
+      const key = await Cripto.hmac(salt, master_key);
+      const vault_bytes = msgpack_min_default.encode(vault);
+      const encrypted_vault = await AES256GCM.encrypt(vault_bytes, key);
+      return Bytes.merge([salt, encrypted_vault], 8);
+    }
+    /**
+     * Decifra un vault
+     * @param {Uint8Array} encrypted_bytes 
+     * @return {Object} - il vault decifrato
+     */
+    static async decrypt(encrypted_bytes, master_key = this.master_key) {
+      const salt = encrypted_bytes.subarray(0, 16);
+      const encrypted_vault = encrypted_bytes.subarray(16);
+      const key = await Cripto.hmac(salt, master_key);
+      const decrypted_vault = await AES256GCM.decrypt(encrypted_vault, key);
+      return msgpack_min_default.decode(decrypted_vault);
+    }
+    /**
+     * Compatta i vaults per renderli pronti all esportazione
+     * @returns {Array<Object>} l'array dei vault compattati
+     */
+    static compact_vaults(vaults = this.vaults) {
+      return vaults.map((vault) => {
+        const { secrets: S, createdAt: C, updatedAt: U } = vault;
+        return { S, C, U };
+      });
+    }
+    /**
+     * Decompatta i vaults per renderli nuovamente utilizzabili
+     * @param {Array<Object>} compacted_vaults 
+     */
+    static decompact_vaults(compacted_vaults) {
+      return compacted_vaults.map((vault) => {
+        const { S: secrets, C: createdAt, U: updatedAt } = vault;
+        return { secrets, createdAt, updatedAt };
+      });
+    }
+    /**
+     * Cifra tutti i vault 
+     * @param {Array<Object>} vaults - array dei vari vault
+     */
+    static async encrypt_vaults(vaults) {
+      let i = 0;
+      try {
+        for (i = 0; i < vaults.length; i++) {
+          const encrypted_bytes = await this.encrypt(vaults[i]);
+          vaults[i].secrets = encrypted_bytes;
+        }
+      } catch (error) {
+        console.warn(`Decrypt Vault error at i = ${i}:`, error);
+        return false;
+      }
+      return true;
+    }
+    /**
+     * Decifra tutti i vault 
+     * @param {Array<Object>} vaults - array dei vari vault
+     */
+    static async decrypt_vaults(vaults) {
+      if (vaults instanceof Array === false || vaults.length === 0) return true;
+      let i = 0;
+      try {
+        for (i = 0; i < vaults.length; i++) {
+          const encrypted_bytes = new Uint8Array(vaults[i].secrets.data);
+          const data = await this.decrypt(encrypted_bytes);
+          vaults[i].secrets = data;
+        }
+      } catch (error) {
+        console.warn(`Decrypt Vault error at i = ${i}:`, error);
+        return false;
+      }
+      return true;
+    }
+  };
+  window.VaultService = VaultService;
+
   // popup.js
   document.addEventListener("DOMContentLoaded", async () => {
-    if (AuthService.init()) {
-      document.querySelector("#signin").style.display = "none";
-      document.querySelector("#app").style.display = "";
-      document.querySelector("#user-email").textContent = (await LocalStorage.get("email-utente")).split("@")[0];
+    chrome.runtime.sendMessage({ type: "check-vault-status" }, (res) => {
+      if (res.status === "ready") {
+      } else {
+      }
+    });
+    const sessionInitialized = await AuthService.init();
+    if (sessionInitialized) {
+      PopupUI.init();
+      VaultService.init();
     } else {
       document.querySelector("#signin").addEventListener("submit", async (e) => {
         e.preventDefault();
         const email = document.getElementById("email").value;
         const password = document.getElementById("password").value;
         if (await AuthService.signin(email, password)) {
-          alert("Accesso effettuato");
+          PopupUI.init();
         }
       });
     }
-    document.getElementById("unlock-vault").addEventListener("click", async () => {
-      const started = await AuthService.startSession();
-      console.log(started);
-    });
   });
+  var PopupUI = class {
+    static async init() {
+      document.querySelector("#signin").style.display = "none";
+      document.querySelector("#app").style.display = "";
+      document.querySelector("#user-email").textContent = (await LocalStorage.get("email-utente")).split("@")[0];
+    }
+  };
 })();

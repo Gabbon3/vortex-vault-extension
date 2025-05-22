@@ -9,7 +9,7 @@ export class PasskeyService {
      * @returns {object} request id (per identificare la richiesta) e auth data (per autenticarsi)
      */
     static async get_auth_data() {
-        const chl_req_id = await API.fetch(`${Config.origin}/auth/passkey/`, {
+        const chl_req_id = await API.fetch(`/auth/passkey/`, {
             method: "GET",
         });
         if (!chl_req_id) return false;

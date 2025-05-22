@@ -14,12 +14,27 @@ export class VaultService {
     // Tempo da rimuovere da Date.now() per ottenere i vault piu recenti
     static getDateDiff = 30 * 60 * 1000;
     /**
+     * 
+     */
+    static async init(full = false) {
+        const configured = await VaultService.configSecrets();
+        // -- se non ci sono provo ad avviare la sessione
+        if (!configured) return false;
+        // -- se ci sono avvio il vault
+        const initialized = await VaultService.syncronize(full);
+        if (initialized) {
+            console.log('Vault initialized');
+            return true;
+        }
+        return initialized;
+    }
+    /**
      * Configura i segreti necessari ad utilizzare il vault
      * @returns {boolean} - true se entrambi sono presenti
      */
-    static async config_secrets() {
+    static async configSecrets() {
         // -- ottengo la scadenza dell'access token
-        const ckeKeyAdvanced = SessionStorage.get('cke-key-advanced');
+        const ckeKeyAdvanced = SessionStorage.get('cke-key-basic');
         // - se scaduto restituisco false cosi verrà rigenerata la sessione
         if (ckeKeyAdvanced === null) return false;
         this.master_key = await LocalStorage.get('master-key', ckeKeyAdvanced);
@@ -32,7 +47,7 @@ export class VaultService {
      * @returns {boolean} true per processo completato con successo
      */
     static async syncronize(full = false) {
-        const configured = await this.config_secrets();
+        const configured = await this.configSecrets();
         if (!configured || !this.master_key) return alert('Any Crypto Key founded');
         const vault_update = await LocalStorage.get('vault-update') ?? null;
         let selectFrom = null;
@@ -172,6 +187,46 @@ export class VaultService {
             const { S: secrets, C: createdAt, U: updatedAt } = vault;
             return { secrets, createdAt, updatedAt };
         });
+    }
+    /**
+     * Cifra tutti i vault 
+     * @param {Array<Object>} vaults - array dei vari vault
+     */
+    static async encrypt_vaults(vaults) {
+        let i = 0;
+        try {
+            for (i = 0; i < vaults.length; i++) {
+                // -- decripto i secrets
+                const encrypted_bytes = await this.encrypt(vaults[i]);
+                // ---
+                vaults[i].secrets = encrypted_bytes;
+            }
+        } catch (error) {
+            console.warn(`Decrypt Vault error at i = ${i}:`, error);
+            return false;
+        }
+        return true;
+    }
+    /**
+     * Decifra tutti i vault 
+     * @param {Array<Object>} vaults - array dei vari vault
+     */
+    static async decrypt_vaults(vaults) {
+        if (vaults instanceof Array === false || vaults.length === 0) return true;
+        let i = 0;
+        try {
+            for (i = 0; i < vaults.length; i++) {
+                // -- decripto i secrets
+                const encrypted_bytes = new Uint8Array(vaults[i].secrets.data);
+                const data = await this.decrypt(encrypted_bytes);
+                // --
+                vaults[i].secrets = data;
+            }
+        } catch (error) {
+            console.warn(`Decrypt Vault error at i = ${i}:`, error);
+            return false;
+        }
+        return true;
     }
 }
 

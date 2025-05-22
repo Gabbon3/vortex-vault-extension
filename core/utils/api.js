@@ -1,3 +1,4 @@
+import { Config } from "../../lib/config.js";
 import { SHIV } from "../secure/SHIV.browser.js";
 
 export class API {
@@ -52,7 +53,7 @@ export class API {
                     return null;
             }
             // -- eseguo la chiamata fetch all'endpoint con le opzioni fornite
-            const response = await fetch(endpoint, options);
+            const response = await fetch(`${Config.origin}${endpoint}`, options);
             // -- controllo se la risposta è valida
             if (!response.ok) {
                 const error = {
