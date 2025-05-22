@@ -2,8 +2,20 @@
 <html>
     <head>
         <title>Vault Login</title>
+        <script src="./popup.bundle.js"></script>
+        <link rel="stylesheet" href="css/style.css">
     </head>
     <body>
+        <!-- 
+        SCHERMATA DI DEFAULT
+        -->
+        <div id="app" style="display: none;">
+            <h3>Hi <span id="user-email"></span></h3>
+            <button id="unlock-vault">Unlock Vault</button>
+        </div>
+        <!-- 
+        LOGIN SE NON è LOGGATO L'UTENTE
+        -->
         <form id="signin">
             <input type="email" id="email" placeholder="Email" value="gabriele.gherlone@gmail.com" required />
             <input
@@ -15,6 +27,5 @@
             />
             <button type="submit">Login</button>
         </form>
-        <script src="./popup.js"></script>
     </body>
 </html>

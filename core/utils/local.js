@@ -5,49 +5,61 @@ import msgpack from "./msgpack.min.js";
 export class LocalStorage {
     static prefix = 'vve';
     static key = null;
-
+    /**
+     * Salva qualcosa sul localstorage
+     * @param {string} key nome di riferimento della risorsa nel local storage
+     * @param {string} value 
+     * @param {Uint8Array} crypto_key se un Uint8Array verrà eseguita la crittografia del value 
+     */
     static async set(key, value, crypto_key = null) {
         if (crypto_key === 1) crypto_key = this.key;
         const buffer = msgpack.encode(value);
-        const data = crypto_key instanceof Uint8Array
-            ? await AES256GCM.encrypt(buffer, crypto_key)
-            : buffer;
-        const base64Data = Bytes.base64.encode(data);
-
-        await chrome.storage.local.set({
-            [`${this.prefix}-${key}`]: base64Data
-        });
+        // ---
+        const data = crypto_key instanceof Uint8Array ? await AES256GCM.encrypt(buffer, crypto_key) : buffer;
+        // ---
+        localStorage.setItem(`${LocalStorage.prefix}-${key}`, Bytes.base64.encode(data));
     }
-
+    /**
+     * Verifica se un elemento esiste nel localstorage
+     * @param {string} key 
+     * @returns {boolean} true se esiste false se non esiste
+     */
+    static exist(key) {
+        return localStorage.getItem(`${LocalStorage.prefix}-${key}`) !== null;
+    }
+    /**
+     * Ricava qualcosa dal localstorage
+     * @param {string} key nome di riferimento della risorsa nel local storage
+     * @param {Uint8Array} crypto_key se diverso da null verrà eseguita la decifratura del value
+     * @returns {Promise<string|Object>}
+     */
     static async get(key, crypto_key = null) {
         if (crypto_key === 1) crypto_key = this.key;
         try {
-            const result = await chrome.storage.local.get(`${this.prefix}-${key}`);
-            const base64Data = result[`${this.prefix}-${key}`];
-            if (!base64Data) return null;
-
-            const buffer = Bytes.base64.decode(base64Data);
-            const value = crypto_key instanceof Uint8Array
-                ? await AES256GCM.decrypt(buffer, crypto_key)
-                : buffer;
-
+            const data = localStorage.getItem(`${LocalStorage.prefix}-${key}`);
+            if (!data) return null;
+            // ---
+            const buffer = Bytes.base64.decode(data);
+            let value = crypto_key instanceof Uint8Array ? await AES256GCM.decrypt(buffer, crypto_key) : buffer;
             return msgpack.decode(value);
         } catch (error) {
-            console.warn('[!] ChromeStorage - get', error);
+            console.warn('[!] LocalStorage - get', error);
             return null;
         }
     }
-
-    static async has(key) {
-        const result = await chrome.storage.local.get(`${this.prefix}-${key}`);
-        return Object.keys(result).length > 0;
+    /**
+     * Restituisce vero se un elemento esiste nel localstorage
+     * @param {string} key 
+     * @returns {boolean}
+     */
+    static has(key) {
+        return localStorage.getItem(`${LocalStorage.prefix}-${key}`) !== null;
     }
-
-    static async exist(key) {
-        return await this.has(key);
-    }
-
-    static async remove(key) {
-        await chrome.storage.local.remove(`${this.prefix}-${key}`);
+    /**
+     * Rimuover dal localstorage un elemento
+     * @param {string} key 
+     */
+    static remove(key) {
+        localStorage.removeItem(`${LocalStorage.prefix}-${key}`);
     }
 }

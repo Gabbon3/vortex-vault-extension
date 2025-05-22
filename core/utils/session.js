@@ -3,33 +3,33 @@ import msgpack from "./msgpack.min.js";
 
 export class SessionStorage {
     static prefix = 'vve';
-    static memory = new Map();
-
+    /**
+     * Imposta una nuova risorsa sul sessio storage
+     * @param {string} key referenza della risorsa sul session storage
+     * @param {*} value puo essere qualsiasi tanto viene compressa con msgpack
+     */
     static set(key, value) {
-        const buffer = msgpack.encode(value);
-        const encoded = Bytes.base64.encode(buffer);
-        this.memory.set(`${this.prefix}-${key}`, encoded);
+        sessionStorage.setItem(`${SessionStorage.prefix}-${key}`, Bytes.base64.encode(msgpack.encode(value)));
     }
-
+    /**
+     * Restituisce una risorsa dal session storage
+     * @param {string} key referenza della risorsa sul session storage
+     * @returns {*}
+     */
     static get(key) {
         try {
-            const encoded = this.memory.get(`${this.prefix}-${key}`);
-            return encoded ? msgpack.decode(Bytes.base64.decode(encoded)) : null;
+            const value = sessionStorage.getItem(`${SessionStorage.prefix}-${key}`);
+            return value ? msgpack.decode(Bytes.base64.decode(value)) : null;
         } catch (error) {
-            console.warn('[!] RAMStorage - get', error);
+            console.warn('[!] SessionStorage - get', error);
             return null;
         }
     }
-
+    /**
+     * Elimina una risorsa sul session storage
+     * @param {string} key referenza della risorsa sul session storage
+     */
     static remove(key) {
-        this.memory.delete(`${this.prefix}-${key}`);
-    }
-
-    static has(key) {
-        return this.memory.has(`${this.prefix}-${key}`);
-    }
-
-    static clear() {
-        this.memory.clear();
+        sessionStorage.removeItem(`${SessionStorage.prefix}-${key}`);
     }
 }

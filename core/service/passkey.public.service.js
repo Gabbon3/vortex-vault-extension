@@ -22,7 +22,8 @@ export class PasskeyService {
         if (credentials_id instanceof Array && credentials_id.length > 0) {
             allowCredentials = credentials_id.map(cred_id => ({
                 type: 'public-key',
-                id: Bytes.base64.decode(cred_id, true)
+                id: Bytes.base64.decode(cred_id, true),
+                transports: ["internal"],
             }));
         }
         // -- creo l'oggetto per la richiesta di autenticazione

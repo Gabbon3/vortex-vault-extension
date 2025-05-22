@@ -9,6 +9,66 @@ import { Config } from "../../lib/config.js";
 
 export class AuthService {
     /**
+     * Inizializza la sessione calcolando la shared key
+     */
+    static async init() {
+        /**
+         * CKE
+         */
+        const sessionSharedSecret = SessionStorage.get('shared-secret');
+        const userIsLogged = LocalStorage.exist('shared-secret');
+        if (sessionSharedSecret || !userIsLogged) return true;
+        // ---
+        const keyBasic = await CKE.getBasic();
+        if (!keyBasic) return false;
+        // ---
+        const sharedSecret = await LocalStorage.get('shared-secret', keyBasic);
+        if (!sharedSecret) return false;
+        // ---
+        SessionStorage.set('shared-secret', sharedSecret);
+        console.log('SHIV started');
+        return true;
+    }
+    /**
+     * Tenta di avviare automaticamente una sessione
+     * @returns {number} true è stato loggato e la sessione è stata attivata, 0 già loggato, -1 nuovo access token non ottenuto, -2 nessuna chiave restituita, false sessione non attivata
+     */
+    static async startSession() {
+        const session_storage_init = SessionStorage.get('master-key') !== null;
+        // -- con questa condizione capisco se ce bisogno di accedere o meno
+        const signin_need = !session_storage_init;
+        // -- nessuna necessita di accedere
+        if (!signin_need) return 0;
+        // ---
+        const ckeKeyAdvanced = await CKE.getAdvanced();
+        // -- verifico
+        if (!ckeKeyAdvanced) {
+            console.warn("CKE non ottenuta.");
+            return false;
+        }
+        // -- imposto le variabili di sessione
+        const initialized = await this.initSessionVariables(ckeKeyAdvanced);
+        // ---
+        return initialized;
+    }
+    /**
+     * Imposta la chiave master dell'utente nel session storage
+     * @param {Uint8Array} ckeKeyAdvanced 
+     */
+    static async initSessionVariables(ckeKeyAdvanced) {
+        const master_key = await LocalStorage.get('master-key', ckeKeyAdvanced);
+        const salt = await LocalStorage.get('salt', ckeKeyAdvanced);
+        const email = await LocalStorage.get('email-utente');
+        if (!master_key) return false;
+        // ---
+        SessionStorage.set('cke', ckeKeyAdvanced);
+        SessionStorage.set('master-key', master_key);
+        SessionStorage.set('salt', salt);
+        SessionStorage.set('email', email);
+        // ---
+        return true;
+    }
+    /**
      * Esegue l'accesso
      * @param {string} email 
      * @param {string} password 

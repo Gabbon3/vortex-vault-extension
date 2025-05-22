@@ -2,7 +2,11 @@
     "manifest_version": 3,
     "name": "Vault Extension",
     "version": "1.0",
-    "permissions": ["storage", "tabs", "scripting"],
+    "permissions": [
+        "storage",
+        "tabs",
+        "scripting"
+    ],
     "background": {
         "service_worker": "background.js",
         "type": "module"
@@ -12,9 +16,16 @@
     },
     "content_scripts": [
         {
-            "matches": ["<all_urls>"],
-            "js": ["content.js"]
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "content.js"
+            ]
         }
     ],
-    "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"]
+    "host_permissions": [
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+    ]
 }

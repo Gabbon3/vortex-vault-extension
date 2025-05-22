@@ -18,7 +18,7 @@ export class API {
             options.headers = options.headers || {};
             type.content_type = type.content_type || 'json';
             type.return_type = type.return_type || 'json';
-            const loader = options.loader === true;
+            options.headers['x-client-type'] = 'extension';
             // -- imposto il metodo di autenticazione se presente
             if (options.auth) {
                 options.headers['x-authentication-method'] = options.auth;
