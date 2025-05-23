@@ -17,6 +17,7 @@ export class VaultService {
      * 
      */
     static async init(full = false) {
+        // ---
         const configured = await VaultService.configSecrets();
         // -- se non ci sono provo ad avviare la sessione
         if (!configured) return false;
@@ -24,6 +25,9 @@ export class VaultService {
         const initialized = await VaultService.syncronize(full);
         if (initialized) {
             console.log('Vault initialized');
+            // -- invio i vaults
+            await chrome.storage.session.set({ vaults: VaultService.vaults });
+            // ---
             return true;
         }
         return initialized;
@@ -227,6 +231,31 @@ export class VaultService {
             return false;
         }
         return true;
+    }
+    /**
+     * MESSAGGI CON IL BACKGROUND
+     */
+    /**
+     * Invia i vault al background
+     * @returns {Promise<boolean>} true se il vault è stato salvato con successo
+     */
+    static async sendVaultToBackground() {
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({ type: "store-vault", payload: this.vaults }, (res) => {
+                resolve(!!res?.success);
+            });
+        });
+    }
+    /**
+     * Controlla lo stato dei vaults
+     * @returns {Promise<boolean>} true se i vault sono già in memoria, false altrimenti
+     */
+    static async checkVaultStatus() {
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({ type: "check-vault-status" }, (res) => {
+                resolve(!!res?.hasVault);
+            });
+        });
     }
 }
 

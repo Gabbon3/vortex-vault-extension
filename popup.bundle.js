@@ -2920,6 +2920,7 @@ ${base64}
       const initialized = await _VaultService.syncronize(full);
       if (initialized) {
         console.log("Vault initialized");
+        await chrome.storage.session.set({ vaults: _VaultService.vaults });
         return true;
       }
       return initialized;
@@ -3094,16 +3095,36 @@ ${base64}
       }
       return true;
     }
+    /**
+     * MESSAGGI CON IL BACKGROUND
+     */
+    /**
+     * Invia i vault al background
+     * @returns {Promise<boolean>} true se il vault è stato salvato con successo
+     */
+    static async sendVaultToBackground() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: "store-vault", payload: this.vaults }, (res) => {
+          resolve(!!res?.success);
+        });
+      });
+    }
+    /**
+     * Controlla lo stato dei vaults
+     * @returns {Promise<boolean>} true se i vault sono già in memoria, false altrimenti
+     */
+    static async checkVaultStatus() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: "check-vault-status" }, (res) => {
+          resolve(!!res?.hasVault);
+        });
+      });
+    }
   };
   window.VaultService = VaultService;
 
   // popup.js
   document.addEventListener("DOMContentLoaded", async () => {
-    chrome.runtime.sendMessage({ type: "check-vault-status" }, (res) => {
-      if (res.status === "ready") {
-      } else {
-      }
-    });
     const sessionInitialized = await AuthService.init();
     if (sessionInitialized) {
       PopupUI.init();
@@ -3115,6 +3136,7 @@ ${base64}
         const password = document.getElementById("password").value;
         if (await AuthService.signin(email, password)) {
           PopupUI.init();
+          VaultService.init();
         }
       });
     }

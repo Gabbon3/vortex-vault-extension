@@ -20,6 +20,7 @@
                 "<all_urls>"
             ],
             "js": [
+                "vault-selector.component.js",
                 "content.js"
             ]
         }

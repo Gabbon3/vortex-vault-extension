@@ -3,13 +3,6 @@ import { VaultService } from "./core/service/vault.service.js";
 import { LocalStorage } from "./core/utils/local.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
-    chrome.runtime.sendMessage({ type: "check-vault-status" }, (res) => {
-        if (res.status === "ready") {
-            // usa vault direttamente
-        } else {
-            // triggera login + decrypt + sync
-        }
-    });
     const sessionInitialized = await AuthService.init();
     if (sessionInitialized) {
         PopupUI.init();
@@ -28,6 +21,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 // ---
                 if (await AuthService.signin(email, password)) {
                     PopupUI.init();
+                    VaultService.init();
                 }
             });
     }
