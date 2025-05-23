@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 const password = document.getElementById("password").value;
                 // ---
                 if (await AuthService.signin(email, password)) {
+                    e.target.reset();
                     PopupUI.init();
                     VaultService.init();
                 }
@@ -32,14 +33,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     //     const started = await AuthService.startSession();
     //     console.log(started);
     // })
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+        if (!confirm('Signout?')) return;
+        await AuthService.signout();
+        PopupUI.init(true);
+    })
 });
 
 class PopupUI {
-    static async init() {
-        document.querySelector("#signin").style.display = "none";
-        document.querySelector("#app").style.display = "";
-        document.querySelector("#user-email").textContent = (
-            await LocalStorage.get("email-utente")
-        ).split("@")[0];
+    static async init(logout = false) {
+        document.querySelector("#signin").style.display = logout ? '' : "none";
+        document.querySelector("#app").style.display = logout ? 'none' : "";
+        const email = await LocalStorage.get("email-utente");
+        if (!email) return;
+        document.querySelector("#user-email").textContent = email.split("@")[0];
     }
 }

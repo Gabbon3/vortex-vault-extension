@@ -3,28 +3,25 @@
     <head>
         <title>Vault Login</title>
         <script src="./popup.bundle.js"></script>
-        <link rel="stylesheet" href="css/style.css">
+        <link rel="stylesheet" href="css/main.css">
     </head>
     <body>
         <!-- 
         SCHERMATA DI DEFAULT
         -->
-        <div id="app" style="display: none;">
+        <div id="app" class="container" style="display: none;">
             <h3>Hi <span id="user-email"></span></h3>
             <!-- <button id="unlock-vault">Unlock Vault</button> -->
+            <button id="logout-btn">Logout</button>
         </div>
         <!-- 
         LOGIN SE NON è LOGGATO L'UTENTE
         -->
-        <form id="signin">
-            <input type="email" id="email" placeholder="Email" value="gabriele.gherlone@gmail.com" required />
-            <input
-            type="password"
-            id="password"
-            placeholder="Password"
-            value=""
-            required
-            />
+        <form id="signin" class="container">
+            <label for="email">Email</label>
+            <input type="email" id="email" placeholder="Email" required />
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="Password" value="" required />
             <button type="submit">Login</button>
         </form>
     </body>

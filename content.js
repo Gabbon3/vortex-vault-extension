@@ -86,6 +86,7 @@ class ContentService {
             // ---
             if (this.searchActive) {
                 this.targetInput = document.activeElement;
+                this.targetInput.addEventListener("blur", this.handleTargetBlur.bind(this));
                 if (!this.targetInput || this.targetInput.tagName !== "INPUT" || this.targetInput.type === "password") {
                     this.searchActive = false;
                     return;
@@ -135,6 +136,16 @@ class ContentService {
             await this.fetchVaults(this.currentQuery);
         }
 
+    }
+
+    /**
+     * Quando fa focus out, rimuove il selector
+     */
+    handleTargetBlur() {
+        if (this.searchActive) {
+            this.searchActive = false;
+            this.closeVaultSelector();
+        }
     }
 
     /**
@@ -217,6 +228,10 @@ class ContentService {
     closeVaultSelector() {
         this.vaultSelector.style.display = "none";
         this.vaultSelector.innerHTML = ''; // opzionale: svuoti
+        // -- rimuovo il listener per il focus out
+        if (this.targetInput) {
+            this.targetInput.removeEventListener("blur", this.handleTargetBlur);
+        }
     }
     /**
      * Aggancia il vault selector all'input target

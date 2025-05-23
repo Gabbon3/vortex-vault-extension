@@ -124,4 +124,19 @@ export class AuthService {
         // ---
         return true;
     }
+
+    /**
+     * Effettua il logout eliminando ogni traccia dell'utente dal client
+     */
+    static async signout() {
+        const res = await API.fetch('/auth/signout', {
+            method: 'POST',
+        });
+        if (!res) return false;
+        // ---
+        localStorage.clear();
+        sessionStorage.clear();
+        await chrome.storage.session.clear();
+        return true;
+    }
 }

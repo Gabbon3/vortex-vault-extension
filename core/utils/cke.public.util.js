@@ -53,7 +53,7 @@ export class CKE {
     static async getBasic() {
         const localMaterial = await LocalStorage.get("cke-localMaterial");
         if (!localMaterial) {
-            console.warn("No local material founded");
+            console.log("No local material founded");
             return null;
         }
         // ---
@@ -76,7 +76,7 @@ export class CKE {
     static async getAdvanced() {
         const localMaterial = await LocalStorage.get("cke-localMaterial");
         if (!localMaterial) {
-            console.warn("No local material founded");
+            console.log("No local material founded");
             return null;
         }
         // ---

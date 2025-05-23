@@ -2311,7 +2311,7 @@ ${base64}
 
   // lib/config.js
   var Config = class {
-    static dev = true;
+    static dev = false;
     // ---
     static origin = this.dev ? "http://localhost:3000" : "https://vortexvault.fly.dev";
   };
@@ -2713,7 +2713,7 @@ ${base64}
     static async getBasic() {
       const localMaterial = await LocalStorage.get("cke-localMaterial");
       if (!localMaterial) {
-        console.warn("No local material founded");
+        console.log("No local material founded");
         return null;
       }
       const res = await API.fetch(`/cke/get/basic`, {
@@ -2732,7 +2732,7 @@ ${base64}
     static async getAdvanced() {
       const localMaterial = await LocalStorage.get("cke-localMaterial");
       if (!localMaterial) {
-        console.warn("No local material founded");
+        console.log("No local material founded");
         return null;
       }
       const res = await PasskeyService.authenticate({
@@ -2838,6 +2838,19 @@ ${base64}
       SessionStorage.set("master-key", master_key);
       SessionStorage.set("salt", salt);
       SessionStorage.set("uid", res.uid);
+      return true;
+    }
+    /**
+     * Effettua il logout eliminando ogni traccia dell'utente dal client
+     */
+    static async signout() {
+      const res = await API.fetch("/auth/signout", {
+        method: "POST"
+      });
+      if (!res) return false;
+      localStorage.clear();
+      sessionStorage.clear();
+      await chrome.storage.session.clear();
       return true;
     }
   };
@@ -3135,17 +3148,25 @@ ${base64}
         const email = document.getElementById("email").value;
         const password = document.getElementById("password").value;
         if (await AuthService.signin(email, password)) {
+          e.target.reset();
           PopupUI.init();
           VaultService.init();
         }
       });
     }
+    document.getElementById("logout-btn").addEventListener("click", async () => {
+      if (!confirm("Signout?")) return;
+      await AuthService.signout();
+      PopupUI.init(true);
+    });
   });
   var PopupUI = class {
-    static async init() {
-      document.querySelector("#signin").style.display = "none";
-      document.querySelector("#app").style.display = "";
-      document.querySelector("#user-email").textContent = (await LocalStorage.get("email-utente")).split("@")[0];
+    static async init(logout = false) {
+      document.querySelector("#signin").style.display = logout ? "" : "none";
+      document.querySelector("#app").style.display = logout ? "none" : "";
+      const email = await LocalStorage.get("email-utente");
+      if (!email) return;
+      document.querySelector("#user-email").textContent = email.split("@")[0];
     }
   };
 })();

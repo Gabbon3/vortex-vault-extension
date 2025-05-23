@@ -2,14 +2,18 @@
     "manifest_version": 3,
     "name": "Vault Extension",
     "version": "1.0",
+    "description": "Secure vault autofill extension.",
     "permissions": [
         "storage",
         "tabs",
         "scripting"
     ],
+    "host_permissions": [
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+    ],
     "background": {
-        "service_worker": "background.js",
-        "type": "module"
+        "service_worker": "background.js"
     },
     "action": {
         "default_popup": "popup.html"
@@ -20,13 +24,9 @@
                 "<all_urls>"
             ],
             "js": [
-                "vault-selector.component.js",
                 "content.js"
-            ]
+            ],
+            "run_at": "document_idle"
         }
-    ],
-    "host_permissions": [
-        "http://localhost/*",
-        "http://127.0.0.1/*"
     ]
 }
