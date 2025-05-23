@@ -143,8 +143,10 @@ class ContentService {
      */
     handleTargetBlur() {
         if (this.searchActive) {
-            this.searchActive = false;
-            this.closeVaultSelector();
+            setTimeout(() => {
+                this.searchActive = false;
+                this.closeVaultSelector();
+            }, 500);
         }
     }
 
