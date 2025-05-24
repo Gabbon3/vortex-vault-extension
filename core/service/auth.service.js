@@ -16,7 +16,7 @@ export class AuthService {
          */
         const sessionSharedSecret = SessionStorage.get("shared-secret");
         if (sessionSharedSecret) {
-            console.log('Session alreay ok');
+            console.log('Session already ok');
             return true;
         }
         // ---
@@ -49,7 +49,7 @@ export class AuthService {
         if (!ckeKeyBasic) ckeKeyBasic = await CKE.getBasic();
         // -- verifico
         if (!ckeKeyBasic) {
-            console.warn("CKE non ottenuta.");
+            console.log("CKE non ottenuta.");
             return false;
         }
         // -- imposto le variabili di sessione
@@ -63,9 +63,9 @@ export class AuthService {
      */
     static async initSessionVariables(ckeKeyAdvanced) {
         const master_key = await LocalStorage.get("master-key", ckeKeyAdvanced);
+        if (!master_key) return false;
         const salt = await LocalStorage.get("salt", ckeKeyAdvanced);
         const email = await LocalStorage.get("email-utente");
-        if (!master_key) return false;
         // ---
         SessionStorage.set("cke-key-basic", ckeKeyAdvanced);
         SessionStorage.set("master-key", master_key);

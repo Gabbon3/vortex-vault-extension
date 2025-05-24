@@ -61,15 +61,32 @@ export class VaultService {
          * disincronizzazione tra client e server
          */
         if (vault_update) selectFrom = new Date(Date.now() - (this.getDateDiff));
-        // ---
+        /**
+         * Provo ad ottenere i vault dal localstorage
+         */
+        this.vaults = [];
         try {
             this.vaults = await VaultLocal.get(this.master_key);
-            const n_local_vaults = this.vaults.length;
-            const n_db_vaults = await this.count();
-            // recupero tutti i vault se per esempio un vault è stato eliminato sul db
-            if (n_local_vaults > n_db_vaults) full = true;
-            // se ci sono dei vault nel localstorage recupero solo quelli nuovi
-            // recupero tutti i vault se full è true
+        } catch (error) {
+            console.log('[X] Errore crittografico localstorage', error);
+            console.log('[i] Sincronizzo completamente con il vault');
+            full = true;
+        }
+        /**
+         * Se ce stato un errore nell'ottenerli dal localstorage, effettuo una sincronizzazione completa
+         */
+        try {
+            /**
+             * se non è richiesta la sincronizzazione completa
+             * effettuo una sincronizzazione completa se qualcosa è stato eliminato
+             */
+            if (!full) {
+                const n_local_vaults = this.vaults.length;
+                const n_db_vaults = await this.count();
+                // recupero tutti i vault se per esempio un vault è stato eliminato sul db
+                if (n_local_vaults > n_db_vaults) full = true;
+            }
+            // ---
             const vaults_from_db = await this.get(full ? null : selectFrom);
             if (vaults_from_db.length > 0) {
                 if (full) {
