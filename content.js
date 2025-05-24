@@ -8,7 +8,6 @@ class ContentService {
         this.currentQuery = "";
         this.vaultSelector = null;
         this.debounceTimeout = null;
-        this.maxResults = 5;
     }
     /**
      * Inizializzo gli eventi necessari al funzionamento del
@@ -36,6 +35,13 @@ class ContentService {
     font-size: 14px;
     max-width: 400px;
     min-width: 200px;
+    max-height: 350px;
+    overflow-y: scroll;
+    scrollbar-width: none;
+  }
+
+  #vault-selector::-webkit-scrollbar {
+    display: none; /* Chrome, Safari */
   }
 
   #vault-selector .vault-entry {
@@ -91,7 +97,9 @@ class ContentService {
                 if (vaultData?.secrets?.O) {
                     // ---
                     const _totp = new TOTP();
-                    const secretDecoded = Bytes.base32.decode(vaultData.secrets.O);
+                    const secretDecoded = Bytes.base32.decode(
+                        vaultData.secrets.O
+                    );
                     // ---
                     const otp = await _totp.code(secretDecoded);
                     if (otp && this.targetInput) {
@@ -120,8 +128,10 @@ class ContentService {
      * @returns
      */
     async handleKeyDown(event) {
+        let totpOnly = event.ctrlKey && event.key === "ù" && event.altKey;
+        const toggleSearch = event.ctrlKey && event.key === "ù";
         // -- toggle attivazione ricerca con Ctrl + ù
-        if (event.ctrlKey && event.key === "ù") {
+        if (totpOnly || toggleSearch) {
             event.preventDefault();
             this.searchActive = !this.searchActive;
             console.log(
@@ -148,7 +158,7 @@ class ContentService {
                 clearTimeout(this.debounceTimeout);
                 this.currentQuery = this.targetInput.value.trim();
                 this.debounceTimeout = setTimeout(() => {
-                    this.fetchVaults(this.currentQuery);
+                    this.fetchVaults({ query: this.currentQuery, totpOnly });
                 }, 150);
             }
             // ---
@@ -185,7 +195,7 @@ class ContentService {
             if (!isChar) return;
             // ---
             this.currentQuery = this.targetInput.value.trim();
-            await this.fetchVaults(this.currentQuery);
+            await this.fetchVaults({ query: this.currentQuery });
         }
     }
 
@@ -268,18 +278,20 @@ class ContentService {
     /**
      * Restituisce tutti i vault
      * @param {string} query query per ricercare i vault
+     * @param {boolean} totpOnly se true restituisce solo le entry con codice totp
      */
-    async fetchVaults(query) {
+    async fetchVaults({ query, totpOnly = false }) {
         try {
             const response = await chrome.runtime.sendMessage({
                 type: "get-vaults",
                 payload: {
                     name: query,
+                    totpOnly
                 },
             });
             // ---
             if (response.success && response.data instanceof Array) {
-                this.showVaultSelector(this.targetInput, response.data);
+                this.showVaultSelector(this.targetInput, response.data, totpOnly);
             } else {
                 this.closeVaultSelector();
             }
@@ -291,9 +303,10 @@ class ContentService {
     /**
      * Mostra il container e lo posiziona sotto l'input target
      * @param {HTMLElement} inputElement
-     * @param {*} vaultEntries
+     * @param {Array} vaultEntries
+     * @param {boolean} totpOnly 
      */
-    showVaultSelector(inputElement, vaultEntries) {
+    showVaultSelector(inputElement, vaultEntries, totpOnly = false) {
         this.attachVaultSelectorTo(inputElement);
         this.vaultSelector.style.display = "flex";
         /**
@@ -305,11 +318,11 @@ class ContentService {
             return;
         }
         /**
-         * prendo i primi 5
+         * DEPRECATO: prendo i primi 5
          */
         this.vaultSelector.innerHTML = "";
         // ---
-        vaultEntries.slice(0, this.maxResults).forEach((vault) => {
+        vaultEntries.forEach((vault) => {
             const entry = this.renderVaultEntry(vault);
             this.vaultSelector.appendChild(entry);
         });
@@ -348,7 +361,7 @@ class ContentService {
         }</strong><span>${vault.secrets.U ?? "no username"}</span></div>
         ${
             !!vault.secrets.O
-                ? '<button class="vve-totp" title="TOTP code">TOTP</button>'
+                ? '<button class="vve-totp" title="Insert TOTP code">TOTP</button>'
                 : ""
         }`;
         div._vaultData = vault;

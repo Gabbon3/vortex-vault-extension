@@ -1,17 +1,14 @@
 {
     "manifest_version": 3,
-    "name": "Vault Extension",
+    "name": "Vortex Vault Extension",
     "version": "1.0",
     "description": "Secure vault autofill extension.",
-    "permissions": [
-        "storage",
-        "tabs",
-        "scripting"
-    ],
-    "host_permissions": [
-        "http://localhost/*",
-        "http://127.0.0.1/*"
-    ],
+    "permissions": ["storage", "tabs", "scripting"],
+    "icons": {
+        "16": "img/favicon-16x16.png",
+        "32": "img/favicon-32x32.png"
+    },
+    "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
     "background": {
         "service_worker": "background.js"
     },
@@ -20,12 +17,8 @@
     },
     "content_scripts": [
         {
-            "matches": [
-                "<all_urls>"
-            ],
-            "js": [
-                "dist/content.bundle.js"
-            ],
+            "matches": ["<all_urls>"],
+            "js": ["dist/content.bundle.js"],
             "run_at": "document_idle"
         }
     ]

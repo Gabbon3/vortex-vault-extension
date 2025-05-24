@@ -7,7 +7,7 @@
     },
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
-        "watch": "esbuild popup.js content.js --bundle --outdir=dist --entry-names=[name].bundle --watch"
+        "watch": "esbuild popup.js content.js --bundle --outdir=dist --entry-names=[name].bundle --minify --watch"
     },
     "keywords": [],
     "author": "",
