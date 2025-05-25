@@ -8,6 +8,8 @@ class ContentService {
         this.currentQuery = "";
         this.vaultSelector = null;
         this.debounceTimeout = null;
+        // per navigazione con frecce
+        this.selectedIndex = 0;
     }
     /**
      * Inizializzo gli eventi necessari al funzionamento del
@@ -20,6 +22,7 @@ class ContentService {
          */
         const style = document.createElement("style");
         style.textContent = `
+  :root { --vve-hover-color: #383838 }
   #vault-selector {
     position: absolute;
     display: none;
@@ -70,8 +73,9 @@ class ContentService {
     cursor: pointer;
   }
 
-  #vault-selector .vault-entry:hover {
-    background-color: #383838;
+  #vault-selector .vault-entry:hover,
+  #vault-selector .vault-entry.active {
+    background-color: var(--vve-hover-color);
   }
 
   #vault-selector .vault-entry span {
@@ -95,17 +99,7 @@ class ContentService {
                 const entry = otpButton.closest(".vault-entry");
                 const vaultData = entry?._vaultData;
                 if (vaultData?.secrets?.O) {
-                    // ---
-                    const _totp = new TOTP();
-                    const secretDecoded = Bytes.base32.decode(
-                        vaultData.secrets.O
-                    );
-                    // ---
-                    const otp = await _totp.code(secretDecoded);
-                    if (otp && this.targetInput) {
-                        this.smartFillInput(this.targetInput, otp);
-                        this.closeVaultSelector();
-                    }
+                    this.insertTotp(vaultData);
                 }
                 return;
             }
@@ -172,18 +166,45 @@ class ContentService {
              * Chiudi selettore con ESC
              */
             if (event.key === "Escape") {
+                event.preventDefault();
                 this.searchActive = false;
                 this.closeVaultSelector();
                 return;
             }
             /**
-             * Autocompletamento primo risultato se premi Enter
+             * Frecce
              */
-            if (event.ctrlKey && event.key === "Enter") {
-                const firstEntry =
-                    this.vaultSelector?.querySelector(".vault-entry");
-                if (firstEntry && firstEntry._vaultData) {
-                    this.handleVaultSelection(firstEntry._vaultData);
+            if (this.searchActive && event.key === "ArrowUp") {
+                event.preventDefault();
+                this.moveSelection(-1);
+                return;
+            }
+            if (this.searchActive && event.key === "ArrowDown") {
+                event.preventDefault();
+                this.moveSelection(1);
+                return;
+            }
+            /**
+             * Inserisco il vault se premo ctrl + i
+             */
+            if (event.ctrlKey && event.key === "i") {
+                event.preventDefault();
+                const selected =
+                    this.vaultSelector?.children[this.selectedIndex];
+                if (selected && selected._vaultData) {
+                    this.handleVaultSelection(selected._vaultData);
+                }
+                return;
+            }
+            /**
+             * Inserisco il totp
+             */
+            if (event.ctrlKey && event.key === "ò") {
+                event.preventDefault();
+                const selected =
+                    this.vaultSelector?.children[this.selectedIndex];
+                if (selected && selected._vaultData?.secrets?.O) {
+                    this.insertTotp(selected._vaultData);
                 }
                 return;
             }
@@ -197,6 +218,24 @@ class ContentService {
             this.currentQuery = this.targetInput.value.trim();
             await this.fetchVaults({ query: this.currentQuery });
         }
+    }
+
+    /**
+     * Sposta il selettore con le freccie
+     * @param {number} direction +- 1
+     */
+    moveSelection(direction) {
+        // -- verifico che ci siano elementi
+        const entries = this.vaultSelector?.children;
+        if (!entries || entries.length === 0) return;
+        // -- rimuovo l'attuale selezione
+        entries[this.selectedIndex]?.classList.remove("active");
+        // -- calcolo la posizione successiva
+        this.selectedIndex += direction;
+        if (this.selectedIndex < 0) this.selectedIndex = entries.length - 1;
+        if (this.selectedIndex >= entries.length) this.selectedIndex = 0;
+        // -- aggiungo active all'elemento target
+        entries[this.selectedIndex]?.classList.add("active");
     }
 
     /**
@@ -276,6 +315,21 @@ class ContentService {
     }
 
     /**
+     * Inserisce il codice totp
+     * @param {Object} vaultData 
+     */
+    async insertTotp(vaultData) {
+        const _totp = new TOTP();
+        const secretDecoded = Bytes.base32.decode(vaultData.secrets.O);
+        // ---
+        const otp = await _totp.code(secretDecoded);
+        if (otp && this.targetInput) {
+            this.smartFillInput(this.targetInput, otp);
+            this.closeVaultSelector();
+        }
+    }
+
+    /**
      * Restituisce tutti i vault
      * @param {string} query query per ricercare i vault
      * @param {boolean} totpOnly se true restituisce solo le entry con codice totp
@@ -286,12 +340,16 @@ class ContentService {
                 type: "get-vaults",
                 payload: {
                     name: query,
-                    totpOnly
+                    totpOnly,
                 },
             });
             // ---
             if (response.success && response.data instanceof Array) {
-                this.showVaultSelector(this.targetInput, response.data, totpOnly);
+                this.showVaultSelector(
+                    this.targetInput,
+                    response.data,
+                    totpOnly
+                );
             } else {
                 this.closeVaultSelector();
             }
@@ -304,7 +362,7 @@ class ContentService {
      * Mostra il container e lo posiziona sotto l'input target
      * @param {HTMLElement} inputElement
      * @param {Array} vaultEntries
-     * @param {boolean} totpOnly 
+     * @param {boolean} totpOnly
      */
     showVaultSelector(inputElement, vaultEntries, totpOnly = false) {
         this.attachVaultSelectorTo(inputElement);
@@ -318,14 +376,19 @@ class ContentService {
             return;
         }
         /**
-         * DEPRECATO: prendo i primi 5
+         * Inizializzo l'html e la selezione del vault
          */
         this.vaultSelector.innerHTML = "";
+        this.selectedIndex = 0;
         // ---
         vaultEntries.forEach((vault) => {
             const entry = this.renderVaultEntry(vault);
             this.vaultSelector.appendChild(entry);
         });
+        // -- aggiungo classe active al primo elementi se esiste
+        if (this.vaultSelector.children[0]) {
+            this.vaultSelector.children[0].classList.add("active");
+        }
     }
     /**
      * Chiude il contenitore
