@@ -22,7 +22,7 @@ class ContentService {
          */
         const style = document.createElement("style");
         style.textContent = `
-  :root { --vve-hover-color: #383838 }
+  :root { --vve-hover-color: #444 }
   #vault-selector {
     position: absolute;
     display: none;
@@ -134,10 +134,16 @@ class ContentService {
             // ---
             if (this.searchActive) {
                 this.targetInput = document.activeElement;
-                this.targetInput.addEventListener(
-                    "blur",
-                    this.handleTargetBlur.bind(this)
-                );
+                /**
+                 * cerco l'input se il target è in realtà un web component
+                 */
+                if (this.targetInput && this.targetInput.shadowRoot) {
+                    const innerInput = this.targetInput.shadowRoot.querySelector('input, textarea');
+                    if (innerInput) {
+                        this.targetInput = innerInput;
+                    }
+                }
+                // ---
                 if (
                     !this.targetInput ||
                     this.targetInput.tagName !== "INPUT" ||
@@ -146,6 +152,13 @@ class ContentService {
                     this.searchActive = false;
                     return;
                 }
+                /**
+                 * listener usato per chiudere il selettore se l'utente esce dall'input
+                 */
+                this.targetInput.addEventListener(
+                    "blur",
+                    this.handleTargetBlur.bind(this)
+                );
                 /**
                  * Debounce sulla ricerca dei vault
                  */
@@ -189,11 +202,9 @@ class ContentService {
              */
             if (event.ctrlKey && event.key === "i") {
                 event.preventDefault();
-                const selected =
-                    this.vaultSelector?.children[this.selectedIndex];
-                if (selected && selected._vaultData) {
-                    this.handleVaultSelection(selected._vaultData);
-                }
+                const selected = this.vaultSelector?.children[this.selectedIndex];
+                if (!selected || !selected._vaultData) return;
+                this.handleVaultSelection(selected._vaultData);
                 return;
             }
             /**
@@ -201,11 +212,9 @@ class ContentService {
              */
             if (event.ctrlKey && event.key === "ò") {
                 event.preventDefault();
-                const selected =
-                    this.vaultSelector?.children[this.selectedIndex];
-                if (selected && selected._vaultData?.secrets?.O) {
-                    this.insertTotp(selected._vaultData);
-                }
+                const selected = this.vaultSelector?.children[this.selectedIndex];
+                if (!selected || !selected._vaultData) return;
+                this.insertTotp(selected._vaultData);
                 return;
             }
             /**
@@ -260,35 +269,60 @@ class ContentService {
         // -- inserisco lo username nell'input
         this.smartFillInput(this.targetInput, vault.secrets.U);
         let passwordInput = null;
+
         // 1. provo a trovare il campo password tramite il form
         const form = this.targetInput.closest("form");
         if (form) {
             passwordInput = form.querySelector('input[type="password"]');
         }
-        // 2. se non c’è form o campo password, cerchiamo vicino
+
+        // 2. se non c’è form, cerco altri input nelle vicinanze
         if (!passwordInput) {
-            const inputs = [
+            const passwordInputs = [
                 ...document.querySelectorAll('input[type="password"]'),
             ];
-            passwordInput = inputs.find((input) => {
-                // Prossimo nella gerarchia DOM o vicino visivamente
-                const rect1 = this.targetInput.getBoundingClientRect();
-                const rect2 = input.getBoundingClientRect();
-                const distance = Math.abs(rect1.top - rect2.top);
-                return distance < 150; // soglia arbitraria, tarabile
-            });
+            passwordInput = this.findNearest(passwordInputs);
         }
-        // 3. se l’abbiamo trovato, autofill
+
+        // 3. se non ce nemmeno un input password, cerco nei shadow root (sei stronzo)
+        if (!passwordInput) {
+            const shadowInputs = [
+                ...Array.from(document.querySelectorAll('*'))
+                    .filter(el => el.shadowRoot)
+                    .map(el => el.shadowRoot.querySelector('input[type="password"]'))
+                    .filter(Boolean)
+            ];
+            passwordInput = this.findNearest(shadowInputs);
+        }
+
+        // 4. se l’abbiamo trovato -> autofill
         if (passwordInput) {
             this.smartFillInput(passwordInput, vault.secrets.P);
             this.searchActive = false;
         } else {
-            // -- fallback: almeno copia la password
+            // sei stronzo a tuono -> copio la password
             navigator.clipboard.writeText(vault.secrets.P);
             alert("Not able to auto fill, password copied to clipboard");
         }
-        // 4. chiudo il selettore
+
+        // 5. chiudo il selettore
         this.closeVaultSelector();
+    }
+
+    /**
+     * Restituisce il primo elemento più vicino rispetto ad un altro
+     * @param {Array<HTMLElement>} inputList 
+     * @param {HTMLElement} target 
+     * @param {number} targetDistance 
+     * @returns {HTMLElement}
+     */
+    findNearest(inputList, target = this.targetInput, targetDistance = 150) {
+        return inputList.find((input) => {
+            const rect1 = target.getBoundingClientRect();
+            const rect2 = input.getBoundingClientRect();
+            const distance = Math.abs(rect1.top - rect2.top);
+            return distance < targetDistance;
+        });
     }
 
     /**
@@ -419,14 +453,12 @@ class ContentService {
     renderVaultEntry(vault) {
         const div = document.createElement("div");
         div.className = "vault-entry";
-        div.innerHTML = `<div class="vve-info"><strong>${
-            vault.secrets.T ?? "No title"
-        }</strong><span>${vault.secrets.U ?? "no username"}</span></div>
-        ${
-            !!vault.secrets.O
+        div.innerHTML = `<div class="vve-info"><strong>${vault.secrets.T ?? "No title"
+            }</strong><span>${vault.secrets.U ?? "no username"}</span></div>
+        ${!!vault.secrets.O
                 ? '<button class="vve-totp" title="Insert TOTP code">TOTP</button>'
                 : ""
-        }`;
+            }`;
         div._vaultData = vault;
         return div;
     }
