@@ -5,6 +5,7 @@ class ContentService {
     constructor() {
         this.searchActive = false;
         this.targetInput = null;
+        this.isPasswordInput = false;
         this.currentQuery = "";
         this.vaultSelector = null;
         this.debounceTimeout = null;
@@ -22,22 +23,24 @@ class ContentService {
          */
         const style = document.createElement("style");
         style.textContent = `
-  :root { --vve-hover-color: #444 }
+  :root { --vve-1: #171414; --vve-2: #1f1b1b; --vve-3: #272222 }
   #vault-selector {
     position: absolute;
     display: none;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 14px;
     flex-direction: column;
     z-index: 99999;
-    background: #333;
+    background: var(--vve-1);
+    border: 2px solid var(--vve-3);
+    box-shadow: 0 0 2px 0 var(--vve-1);
     color: #aaa;
-    border: 1px solid #888;
-    border-radius: 6px;
     overflow: hidden;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     font-family: sans-serif;
     font-size: 14px;
     max-width: 400px;
-    min-width: 200px;
+    min-width: 250px;
     max-height: 350px;
     overflow-y: scroll;
     scrollbar-width: none;
@@ -50,9 +53,11 @@ class ContentService {
   #vault-selector .vault-entry {
     display: flex;
     flex-direction: row;
-    gap: 4px;
-    padding: 8px 12px;
-    color: #fff;
+    gap: 5px;
+    padding: 8px;
+    border-radius: 8px;
+    background-color: var(--vve-2);
+    color: #eee !important;
     cursor: pointer;
     width: 100%;
   }
@@ -65,7 +70,7 @@ class ContentService {
 
   #vault-selector .vault-entry .vve-totp {
     margin-left: auto;
-    background-color: #444;
+    background-color: var(--vve-3);
     color: #eee;
     border: 1px solid #555;
     border-radius: 5px;
@@ -75,7 +80,7 @@ class ContentService {
 
   #vault-selector .vault-entry:hover,
   #vault-selector .vault-entry.active {
-    background-color: var(--vve-hover-color);
+    background-color: var(--vve-3);
   }
 
   #vault-selector .vault-entry span {
@@ -143,11 +148,14 @@ class ContentService {
                         this.targetInput = innerInput;
                     }
                 }
+                /**
+                 * Memorizzo se si tratta di un input password
+                 */
+                this.isPasswordInput = this.targetInput.type === "password";
                 // ---
                 if (
                     !this.targetInput ||
-                    this.targetInput.tagName !== "INPUT" ||
-                    this.targetInput.type === "password"
+                    this.targetInput.tagName !== "INPUT"
                 ) {
                     this.searchActive = false;
                     return;
@@ -198,9 +206,9 @@ class ContentService {
                 return;
             }
             /**
-             * Inserisco il vault se premo ctrl + i
+             * Inserisco il vault se premo ctrl + enter
              */
-            if (event.ctrlKey && event.key === "i") {
+            if (event.ctrlKey && !event.altKey && event.key === "Enter") {
                 event.preventDefault();
                 const selected = this.vaultSelector?.children[this.selectedIndex];
                 if (!selected || !selected._vaultData) return;
@@ -208,9 +216,9 @@ class ContentService {
                 return;
             }
             /**
-             * Inserisco il totp
+             * Inserisco il totp se premo ctrl + alt + Enter
              */
-            if (event.ctrlKey && event.key === "ò") {
+            if (event.ctrlKey && event.altKey && event.key === "Enter") {
                 event.preventDefault();
                 const selected = this.vaultSelector?.children[this.selectedIndex];
                 if (!selected || !selected._vaultData) return;
@@ -266,6 +274,17 @@ class ContentService {
      */
     handleVaultSelection(vault) {
         if (!this.targetInput) return;
+        /**
+         * Se è un input di tipo password inserisco solo la password
+         */
+        if (this.isPasswordInput) {
+            this.smartFillInput(this.targetInput, vault.secrets.P);
+            this.closeVaultSelector();
+            return;
+        }
+        /**
+         * Normale uso dell'input
+         */
         // -- inserisco lo username nell'input
         this.smartFillInput(this.targetInput, vault.secrets.U);
         let passwordInput = null;
@@ -302,7 +321,7 @@ class ContentService {
         } else {
             // sei stronzo a tuono -> copio la password
             navigator.clipboard.writeText(vault.secrets.P);
-            alert("Not able to auto fill, password copied to clipboard");
+            // alert("Not able to auto fill, password copied to clipboard");
         }
 
         // 5. chiudo il selettore
