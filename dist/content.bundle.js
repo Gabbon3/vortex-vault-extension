@@ -518,6 +518,80 @@ ${base64}
     }
   };
 
+  // lib/sliders.js
+  var Sliders = class {
+    static initialized = false;
+    static lastHeights = /* @__PURE__ */ new WeakMap();
+    /**
+     * Inizializza gli sliders
+     */
+    static init() {
+      if (this.initialized) return;
+      this.initialized = true;
+      document.querySelectorAll(".vve-slider-cont").forEach((e) => {
+        const style = window.getComputedStyle(e);
+        e.dataset.pt = parseFloat(style.paddingTop.replace("px", "")) || 0;
+        e.dataset.pb = parseFloat(style.paddingBottom.replace("px", "")) || 0;
+        e.classList.add("vve-mpy-0");
+      });
+    }
+    /**
+     * Gestisce lo sliding
+     * @param {string | HTMLElement} targetId - id dello slider container
+     */
+    static manageSlider(targetId, { forceOpen = false, forceClose = false }) {
+      const target = targetId instanceof HTMLElement ? targetId : document.getElementById(targetId);
+      if (!target) return;
+      const isOpen = target.style.maxHeight;
+      if (forceClose || isOpen && forceOpen === false) {
+        this.disconnectObserver(target);
+        target.style.maxHeight = null;
+        target.classList.add("vve-mpy-0");
+        target.classList.remove("slider-open");
+      } else {
+        target.classList.remove("vve-mpy-0");
+        target.classList.add("slider-open");
+        this.updateSliderHeight(target);
+        this.observeSlider(target);
+      }
+    }
+    /**
+     * Osserva uno slider in caso di modifiche
+     * @param {string} target 
+     * @returns
+     */
+    static observeSlider(target) {
+      if (target._sliderObserver) return;
+      const observer = new MutationObserver(() => {
+        this.updateSliderHeight(target);
+      });
+      observer.observe(target, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+      target._sliderObserver = observer;
+    }
+    /**
+     * Aggiorna l'altezza massima di uno slider container
+     * @param {HTMLElement} target 
+     */
+    static updateSliderHeight(target) {
+      const currentHeight = target.scrollHeight + Number(target.dataset.pt) + Number(target.dataset.pb) + 10;
+      target.style.maxHeight = currentHeight + "px";
+    }
+    /**
+     * Ferma l'observer e pulisci
+     * @param {HTMLElement} target 
+     */
+    static disconnectObserver(target) {
+      if (target._sliderObserver) {
+        target._sliderObserver.disconnect();
+        delete target._sliderObserver;
+      }
+    }
+  };
+
   // content.js
   var ContentService = class {
     constructor() {
@@ -537,10 +611,10 @@ ${base64}
       document.addEventListener("keydown", this.handleKeyDown.bind(this));
       const style = document.createElement("style");
       style.textContent = `
-  :root { --vve-1: #171414; --vve-2: #1f1b1b; --vve-3: #272222 }
+  :root { --vve-color: #a8af74; --vve-color-2: #3f3e32; --vve-1: #171414; --vve-2: #1f1b1b; --vve-3: #272222 }
   #vault-selector {
     position: absolute;
-    display: none;
+    display: flex;
     gap: 8px;
     padding: 8px;
     border-radius: 14px;
@@ -558,6 +632,7 @@ ${base64}
     max-height: 350px;
     overflow-y: scroll;
     scrollbar-width: none;
+    font-family: 'Arial' !important;
   }
 
   #vault-selector::-webkit-scrollbar {
@@ -574,6 +649,8 @@ ${base64}
     color: #eee !important;
     cursor: pointer;
     width: 100%;
+    border-left: 0px solid var(--vve-color-2);
+    transition: 0.1s;
   }
 
   #vault-selector .vault-entry .vve-info {
@@ -595,17 +672,49 @@ ${base64}
   #vault-selector .vault-entry:hover,
   #vault-selector .vault-entry.active {
     background-color: var(--vve-3);
+    border-left: 5px solid var(--vve-color-2);
+    border-radius: 5px 8px 8px 5px;
+    transition: 0.1s;
   }
 
   #vault-selector .vault-entry span {
     color: #aaa;
     font-size: 13px;
   }
+
+  .vve-mpy-0 {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .vve-slider-cont {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease, margin 0.3s ease, opacity 0.3s ease;
+
+  }
+  .vve-slider-cont.fast {
+      transition-duration: 0.25s;
+  }
+  .vve-slider-cont.slow {
+      transition-duration: 0.35s;
+  }
+  .vve-slider-cont.slower {
+      transition-duration: 0.4s;
+  }
+  .vve-slider-cont.slider-open {
+      opacity: 1;
+  }
 `;
       document.head.appendChild(style);
       this.vaultSelector = document.createElement("div");
       this.vaultSelector.id = "vault-selector";
+      this.vaultSelector.className = "vve-slider-cont";
       document.body.appendChild(this.vaultSelector);
+      Sliders.init();
       document.addEventListener("click", async (event) => {
         const otpButton = event.target.closest(".vve-totp");
         if (otpButton) {
@@ -829,6 +938,7 @@ ${base64}
             response.data,
             totpOnly
           );
+          Sliders.manageSlider(this.vaultSelector, { forceOpen: true });
         } else {
           this.closeVaultSelector();
         }
@@ -844,7 +954,6 @@ ${base64}
      */
     showVaultSelector(inputElement, vaultEntries, totpOnly = false) {
       this.attachVaultSelectorTo(inputElement);
-      this.vaultSelector.style.display = "flex";
       if (vaultEntries.length === 0) {
         this.vaultSelector.innerHTML = "<span style='padding: 5px'>No vault, maybe you need to log in</span>";
         return;
@@ -863,11 +972,13 @@ ${base64}
      * Chiude il contenitore
      */
     closeVaultSelector() {
-      this.vaultSelector.style.display = "none";
-      this.vaultSelector.innerHTML = "";
+      Sliders.manageSlider(this.vaultSelector, { forceClose: true });
       if (this.targetInput) {
         this.targetInput.removeEventListener("blur", this.handleTargetBlur);
       }
+      setTimeout(() => {
+        this.vaultSelector.innerHTML = "";
+      }, 500);
     }
     /**
      * Aggancia il vault selector all'input target

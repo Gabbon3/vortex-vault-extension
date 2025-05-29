@@ -1,5 +1,6 @@
 import { TOTP } from "./core/secure/totp.js";
 import { Bytes } from "./core/utils/bytes.js";
+import { Sliders } from "./lib/sliders.js";
 
 class ContentService {
     constructor() {
@@ -23,10 +24,10 @@ class ContentService {
          */
         const style = document.createElement("style");
         style.textContent = `
-  :root { --vve-1: #171414; --vve-2: #1f1b1b; --vve-3: #272222 }
+  :root { --vve-color: #a8af74; --vve-color-2: #3f3e32; --vve-1: #171414; --vve-2: #1f1b1b; --vve-3: #272222 }
   #vault-selector {
     position: absolute;
-    display: none;
+    display: flex;
     gap: 8px;
     padding: 8px;
     border-radius: 14px;
@@ -44,6 +45,7 @@ class ContentService {
     max-height: 350px;
     overflow-y: scroll;
     scrollbar-width: none;
+    font-family: 'Arial' !important;
   }
 
   #vault-selector::-webkit-scrollbar {
@@ -60,6 +62,8 @@ class ContentService {
     color: #eee !important;
     cursor: pointer;
     width: 100%;
+    border-left: 0px solid var(--vve-color-2);
+    transition: 0.1s;
   }
 
   #vault-selector .vault-entry .vve-info {
@@ -81,11 +85,41 @@ class ContentService {
   #vault-selector .vault-entry:hover,
   #vault-selector .vault-entry.active {
     background-color: var(--vve-3);
+    border-left: 5px solid var(--vve-color-2);
+    border-radius: 5px 8px 8px 5px;
+    transition: 0.1s;
   }
 
   #vault-selector .vault-entry span {
     color: #aaa;
     font-size: 13px;
+  }
+
+  .vve-mpy-0 {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .vve-slider-cont {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease, margin 0.3s ease, opacity 0.3s ease;
+
+  }
+  .vve-slider-cont.fast {
+      transition-duration: 0.25s;
+  }
+  .vve-slider-cont.slow {
+      transition-duration: 0.35s;
+  }
+  .vve-slider-cont.slower {
+      transition-duration: 0.4s;
+  }
+  .vve-slider-cont.slider-open {
+      opacity: 1;
   }
 `;
         document.head.appendChild(style);
@@ -93,7 +127,9 @@ class ContentService {
         // -- creo il componente vault selector
         this.vaultSelector = document.createElement("div");
         this.vaultSelector.id = "vault-selector";
+        this.vaultSelector.className = "vve-slider-cont";
         document.body.appendChild(this.vaultSelector);
+        Sliders.init();
         // -- aggiungo il listener delegator sulle entry dei vault per l'autocompletamento
         document.addEventListener("click", async (event) => {
             /**
@@ -403,6 +439,7 @@ class ContentService {
                     response.data,
                     totpOnly
                 );
+                Sliders.manageSlider(this.vaultSelector, { forceOpen: true });
             } else {
                 this.closeVaultSelector();
             }
@@ -419,7 +456,7 @@ class ContentService {
      */
     showVaultSelector(inputElement, vaultEntries, totpOnly = false) {
         this.attachVaultSelectorTo(inputElement);
-        this.vaultSelector.style.display = "flex";
+        // this.vaultSelector.style.display = "flex";
         /**
          * se ci sono 0 risultati
          */
@@ -447,12 +484,15 @@ class ContentService {
      * Chiude il contenitore
      */
     closeVaultSelector() {
-        this.vaultSelector.style.display = "none";
-        this.vaultSelector.innerHTML = ""; // opzionale: svuoti
+        // this.vaultSelector.style.display = "none";
+        Sliders.manageSlider(this.vaultSelector, { forceClose: true });
         // -- rimuovo il listener per il focus out
         if (this.targetInput) {
             this.targetInput.removeEventListener("blur", this.handleTargetBlur);
         }
+        setTimeout(() => {
+            this.vaultSelector.innerHTML = ""; // opzionale: svuoti
+        }, 500);
     }
     /**
      * Aggancia il vault selector all'input target
