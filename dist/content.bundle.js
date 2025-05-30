@@ -578,7 +578,8 @@ ${base64}
      */
     static updateSliderHeight(target) {
       const currentHeight = target.scrollHeight + Number(target.dataset.pt) + Number(target.dataset.pb) + 10;
-      target.style.maxHeight = currentHeight + "px";
+      const targetLimitHeight = target.dataset.maxHeight ?? false;
+      target.style.maxHeight = targetLimitHeight ? Math.min(Number(targetLimitHeight), currentHeight) + "px" : currentHeight;
     }
     /**
      * Ferma l'observer e pulisci
@@ -611,7 +612,28 @@ ${base64}
       document.addEventListener("keydown", this.handleKeyDown.bind(this));
       const style = document.createElement("style");
       style.textContent = `
-  :root { --vve-color: #a8af74; --vve-color-2: #3f3e32; --vve-1: #171414; --vve-2: #1f1b1b; --vve-3: #272222 }
+  :root { 
+    --vve-color-1: #a8af74; 
+    --vve-text-1: #fff; 
+    --vve-text-2: #aaa; 
+    --vve-color-2: #3f3e32; 
+    --vve-1: #171414; 
+    --vve-2: #1f1b1b; 
+    --vve-3: #272222;
+    --vve-4: #302929;
+    --vve-border-color: #555;
+  }
+  .vve-light {
+    --vve-color-1: #738e54; 
+    --vve-text-1: #111;
+    --vve-text-2: #555;
+    --vve-1: #fff; 
+    --vve-2: #f5f5f5; 
+    --vve-3: #eee;
+    --vve-4: #ddd;
+    --vve-border-color: #ddd;
+  }
+
   #vault-selector {
     position: absolute;
     display: flex;
@@ -621,19 +643,20 @@ ${base64}
     flex-direction: column;
     z-index: 99999;
     background: var(--vve-1);
-    border: 2px solid var(--vve-3);
-    box-shadow: 0 0 2px 0 var(--vve-1);
-    color: #aaa;
+    border: 1px solid var(--vve-border-color);
+    box-shadow: 0 0 2px 0 var(--vve-border-color);
+    color: var(--vve-text-2);
     overflow: hidden;
     font-family: sans-serif;
     font-size: 14px;
     max-width: 400px;
     min-width: 250px;
-    max-height: 350px;
     overflow-y: scroll;
     scrollbar-width: none;
-    font-family: 'Arial' !important;
+    font-family: monospace !important;
   }
+
+  #vault-selector * { font-family: monospace !important; }
 
   #vault-selector::-webkit-scrollbar {
     display: none; /* Chrome, Safari */
@@ -646,10 +669,10 @@ ${base64}
     padding: 8px;
     border-radius: 8px;
     background-color: var(--vve-2);
-    color: #eee !important;
+    color: var(--vve-text-1) !important;
     cursor: pointer;
     width: 100%;
-    border-left: 0px solid var(--vve-color-2);
+    border: 1px solid transparent;
     transition: 0.1s;
   }
 
@@ -662,24 +685,44 @@ ${base64}
   #vault-selector .vault-entry .vve-totp {
     margin-left: auto;
     background-color: var(--vve-3);
-    color: #eee;
-    border: 1px solid #555;
+    color: var(--vve-text-1);
+    border: 1px solid var(--border-color);
     border-radius: 5px;
     padding: 5px;
     cursor: pointer;
   }
 
+  .vve-ctrl-info-cont {
+    display: flex;
+    direction: row;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .vve-ctrl-info {
+    background-color: var(--vve-4);
+    color: var(--vve-text-2);
+    border-radius: 20px;
+    padding: 3px 8px;
+    text-align: center;
+  }
+
+  .vve-mla { margin-left: auto }
+
   #vault-selector .vault-entry:hover,
   #vault-selector .vault-entry.active {
     background-color: var(--vve-3);
-    border-left: 5px solid var(--vve-color-2);
-    border-radius: 5px 8px 8px 5px;
+    border: 1px solid var(--vve-border-color);
     transition: 0.1s;
   }
 
   #vault-selector .vault-entry span {
-    color: #aaa;
+    color: var(--vve-text-2);
     font-size: 13px;
+  }
+
+  #vault-selector .vault-entry strong {
+    font-weight: bold;
   }
 
   .vve-mpy-0 {
@@ -713,6 +756,11 @@ ${base64}
       this.vaultSelector = document.createElement("div");
       this.vaultSelector.id = "vault-selector";
       this.vaultSelector.className = "vve-slider-cont";
+      this.vaultSelector.dataset.maxHeight = "400";
+      const isDark = this.detectTheme();
+      if (!isDark) {
+        this.vaultSelector.classList.add("vve-light");
+      }
       document.body.appendChild(this.vaultSelector);
       Sliders.init();
       document.addEventListener("click", async (event) => {
@@ -731,6 +779,34 @@ ${base64}
         if (!vaultData) return;
         this.handleVaultSelection(vaultData);
       });
+    }
+    /**
+     * Rileva il tema della pagina in cui si trova il content script
+     * @returns {boolean} true se il tema è scuro, false se è chiaro
+     */
+    detectTheme() {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      try {
+        const bgLuminance = this.getBackgroundLuminance();
+        const isActuallyDark = bgLuminance < 128;
+        return isActuallyDark;
+      } catch {
+        return prefersDark;
+      }
+    }
+    /**
+     * Restituisce il valore di illuminazione del background, 
+     * piu è basso più il tema potrebbe essere scuro
+     * @returns {number}
+     */
+    getBackgroundLuminance() {
+      const el = document.body;
+      const style = getComputedStyle(el);
+      const bg = style.backgroundColor;
+      const rgb = bg.match(/\d+/g).map(Number);
+      const [r, g, b] = rgb;
+      const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      return luminance;
     }
     /**
      * Gestisce la ricerca sull'input targettato
@@ -763,11 +839,7 @@ ${base64}
             "blur",
             this.handleTargetBlur.bind(this)
           );
-          clearTimeout(this.debounceTimeout);
-          this.currentQuery = this.targetInput.value.trim();
-          this.debounceTimeout = setTimeout(() => {
-            this.fetchVaults({ query: this.currentQuery, totpOnly });
-          }, 150);
+          this.fetchVaults({ query: "", totpOnly });
         }
         if (!this.searchActive) this.closeVaultSelector();
         return;
@@ -805,8 +877,11 @@ ${base64}
         }
         const isChar = event.key.length === 1 || event.key === "Backspace";
         if (!isChar) return;
+        clearTimeout(this.debounceTimeout);
         this.currentQuery = this.targetInput.value.trim();
-        await this.fetchVaults({ query: this.currentQuery });
+        this.debounceTimeout = setTimeout(() => {
+          this.fetchVaults({ query: this.currentQuery, totpOnly });
+        }, 150);
       }
     }
     /**
@@ -818,8 +893,8 @@ ${base64}
       if (!entries || entries.length === 0) return;
       entries[this.selectedIndex]?.classList.remove("active");
       this.selectedIndex += direction;
-      if (this.selectedIndex < 0) this.selectedIndex = entries.length - 1;
-      if (this.selectedIndex >= entries.length) this.selectedIndex = 0;
+      if (this.selectedIndex < 0) this.selectedIndex = entries.length - 2;
+      if (this.selectedIndex >= entries.length - 1) this.selectedIndex = 0;
       entries[this.selectedIndex]?.classList.add("active");
     }
     /**
@@ -932,7 +1007,7 @@ ${base64}
             totpOnly
           }
         });
-        if (response.success && response.data instanceof Array) {
+        if (response.success && (response.data instanceof Array || response.data === false)) {
           this.showVaultSelector(
             this.targetInput,
             response.data,
@@ -954,8 +1029,11 @@ ${base64}
      */
     showVaultSelector(inputElement, vaultEntries, totpOnly = false) {
       this.attachVaultSelectorTo(inputElement);
-      if (vaultEntries.length === 0) {
-        this.vaultSelector.innerHTML = "<span style='padding: 5px'>No vault, maybe you need to log in</span>";
+      if (vaultEntries === false) {
+        this.vaultSelector.innerHTML = "<span style='padding: 5px'>Vault is not ready, please open extension popup.</span>";
+        return;
+      } else if (vaultEntries.length === 0) {
+        this.vaultSelector.innerHTML = "<span style='padding: 5px'>No vaults matched this query</span>";
         return;
       }
       this.vaultSelector.innerHTML = "";
@@ -967,6 +1045,10 @@ ${base64}
       if (this.vaultSelector.children[0]) {
         this.vaultSelector.children[0].classList.add("active");
       }
+      const ctrlInfo = document.createElement("div");
+      ctrlInfo.classList.add("vve-ctrl-info-cont");
+      ctrlInfo.innerHTML = `<span class="vve-ctrl-info" title="Auto-complete with active credentials">Ctrl + Enter</span><span class="vve-ctrl-info vve-mla" title="Insert TOTP of active credentials">Ctrl + Alt + Enter</span>`;
+      this.vaultSelector.appendChild(ctrlInfo);
     }
     /**
      * Chiude il contenitore
@@ -998,7 +1080,8 @@ ${base64}
     renderVaultEntry(vault) {
       const div = document.createElement("div");
       div.className = "vault-entry";
-      div.innerHTML = `<div class="vve-info"><strong>${vault.secrets.T ?? "No title"}</strong><span>${vault.secrets.U ?? "no username"}</span></div>
+      div.innerHTML = `<div class="vve-info"><strong>${vault.secrets.T ?? "No title"}</strong>
+        <span>${vault.secrets.U ?? "no username"}</span></div>
         ${!!vault.secrets.O ? '<button class="vve-totp" title="Insert TOTP code">TOTP</button>' : ""}`;
       div._vaultData = vault;
       return div;

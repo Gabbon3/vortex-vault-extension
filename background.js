@@ -41,6 +41,8 @@ class BackgroundService {
         // -- carica i vaults dalla sessione
         const result = await chrome.storage.session.get("vaults");
         const vaults = result.vaults || [];
+        // -- se non ci sono vault, invio al client che non esistono
+        if (vaults.length === 0) return false;
         // -- filtro per URL (inclusione) e match sul nome (case insensitive)
         const matched = vaults.filter(vault => {
             // -- catturo solo i logins
