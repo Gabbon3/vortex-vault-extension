@@ -2519,7 +2519,7 @@ ${base64}
     static async fetch(endpoint, options = {}, type = {}) {
       try {
         options.headers = options.headers || {};
-        options.headers["x-client-type"] === "extension";
+        options.headers["x-client-type"] = "extension";
         type.content_type = type.content_type || "json";
         type.return_type = type.return_type || "json";
         options.credentials = "include";
