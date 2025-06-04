@@ -19,16 +19,22 @@ export class API {
             options.headers = options.headers || {};
             type.content_type = type.content_type || 'json';
             type.return_type = type.return_type || 'json';
-            options.headers['x-client-type'] = 'extension';
+            options.credentials = "include";
             // -- imposto il metodo di autenticazione se presente
             if (options.auth) {
                 options.headers['x-authentication-method'] = options.auth;
                 delete options.auth;
             }
             // -- aggiungo l'header integrity se presente
-            const integrity = await SHIV.getIntegrity(options.body ?? {});
+            const integrity = await SHIV.getIntegrity(options.body ?? {}, options.method, endpoint);
             if (integrity) {
                 options.headers['X-Integrity'] = integrity;
+            }
+            // IMPORTANTE: aggiungere queryParams DOPO la firma, per evitare mismatch di endpoint
+            // -- gestisco i query Params
+            if (options.queryParams) {
+                endpoint += `?${options.queryParams}`;
+                delete options.queryParams;
             }
             // -- gestisco il corpo della richiesta in base al tipo di contenuto
             switch (type.content_type) {
@@ -86,6 +92,7 @@ export class API {
             }
             return result;
         } catch (error) {
+            alert(error);
             // -- gestisco eventuali errori nella chiamata
             console.warn(`fetch error: `, error);
             return null;
