@@ -2427,18 +2427,31 @@ ${base64}
      * Restituisce la stringa di integrità 
      * da associare alle fetch come header
      * @param {{}} [body={}] - il body della request, in questo modo leghiamo l'integrity con il body, si possono intercettare modifiche al body
+     * @param {string} method - metodo usato per la fetch (GET, POST...)
+     * @param {string} endpoint - endpoint su cui verrà effettuata la fetch
      * @returns {string} stringa esadecimale dell'integrità
      */
-    static async getIntegrity(body = {}) {
+    static async getIntegrity(body = {}, method = "", endpoint = "") {
       const sharedSecret = SessionStorage.get("shared-secret");
       if (sharedSecret instanceof Uint8Array == false) return null;
       const salt = Cripto.random_bytes(12);
-      const encodedBody = msgpack_min_default.encode(body);
-      const payload = Bytes.merge([salt, encodedBody], 8);
+      const encodedBody = body instanceof Uint8Array ? body : msgpack_min_default.encode(body);
+      const encodedMethod = new TextEncoder().encode(method.toLowerCase());
+      const encodedEndpoint = new TextEncoder().encode(this.normalizeEndpoint(endpoint));
+      const payload = Bytes.merge([salt, encodedBody, encodedMethod, encodedEndpoint], 8);
       const derivedKey = await this.deriveKey(sharedSecret, salt);
       const encrypted = await Cripto.hmac(payload, derivedKey);
       const result = Bytes.merge([salt, encrypted], 8);
       return Bytes.base64.encode(result, true);
+    }
+    /**
+     * Normalizza un path preparandolo alla firma di integrità
+     * rimuove slash finali e query params, forza lower case
+     * @param {string} path 
+     * @returns {string}
+     */
+    static normalizeEndpoint(endpoint) {
+      return endpoint.split("?")[0].replace(/\/+$/, "").toLowerCase();
     }
     /**
      * Genera e imposta le chiavi da usare per l'handshake con il server
@@ -2508,14 +2521,18 @@ ${base64}
         options.headers = options.headers || {};
         type.content_type = type.content_type || "json";
         type.return_type = type.return_type || "json";
-        options.headers["x-client-type"] = "extension";
+        options.credentials = "include";
         if (options.auth) {
           options.headers["x-authentication-method"] = options.auth;
           delete options.auth;
         }
-        const integrity = await SHIV.getIntegrity(options.body ?? {});
+        const integrity = await SHIV.getIntegrity(options.body ?? {}, options.method, endpoint);
         if (integrity) {
           options.headers["X-Integrity"] = integrity;
+        }
+        if (options.queryParams) {
+          endpoint += `?${options.queryParams}`;
+          delete options.queryParams;
         }
         switch (type.content_type) {
           case "json":
@@ -2567,6 +2584,7 @@ ${base64}
         }
         return result;
       } catch (error) {
+        alert(error);
         console.warn(`fetch error: `, error);
         return null;
       }
@@ -2999,10 +3017,9 @@ ${base64}
      * @returns {Array<Object>} un array di oggetti vault
      */
     static async get(updated_after = null) {
-      let url = "/vaults";
-      if (updated_after) url += `?updated_after=${updated_after.toISOString()}`;
-      const res = await API.fetch(url, {
-        method: "GET"
+      const res = await API.fetch("/vaults", {
+        method: "GET",
+        queryParams: updated_after ? `updated_after=${updated_after.toISOString()}` : null
       });
       if (!res) return null;
       if (res.length > 0) LocalStorage.set("vault-update", /* @__PURE__ */ new Date());
