@@ -17,6 +17,7 @@ export class API {
         try {
             // -- imposto le intestazioni e il tipo di contenuto per la richiesta
             options.headers = options.headers || {};
+            options.headers["x-client-type"] === "extension";
             type.content_type = type.content_type || 'json';
             type.return_type = type.return_type || 'json';
             options.credentials = "include";
