@@ -31,10 +31,11 @@ class BackgroundService {
      * Restituisce i vault appropriati in base alla richiesta
      * @param {Object} param0 
      * @param {string} param0.name - titolo del vault  
+     * @param {string} param0.url - 
      * @param {boolean} param0.totpOnly - true per ottenere solo i vault con totp
      * @returns 
      */
-    async handleGetVaults({ name, totpOnly = false }) {
+    async handleGetVaults({ name, url, totpOnly = false }) {
         if (!name) {
             console.log('BackgroundService.handleGetVaults -> Invalid payload');
         }
@@ -55,8 +56,15 @@ class BackgroundService {
                 vault.secrets?.T?.toLowerCase().includes(titleOrUsername)
                 ||
                 vault.secrets?.U?.toLowerCase().includes(titleOrUsername);
-            return nameMatch;
-        });
+            // -- url match
+            let urlMatch = false;
+            if (vault.secrets?.url) {
+                urlMatch = vault.secrets?.url.includes(url);
+                if (urlMatch) vault.urlMatch = true;
+            }
+            // ---
+            return urlMatch || nameMatch;
+        }).sort((a, b) => (b.urlMatch === true) - (a.urlMatch === true));
         // -- applico slice
         if (!totpOnly) return matched.slice(0, this.maxResults);
         else return matched;

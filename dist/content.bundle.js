@@ -1004,6 +1004,7 @@ ${base64}
           type: "get-vaults",
           payload: {
             name: query,
+            url: new URL(window.location.href).origin,
             totpOnly
           }
         });
