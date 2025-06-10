@@ -3165,18 +3165,21 @@ ${base64}
 
   // popup.js
   document.addEventListener("DOMContentLoaded", async () => {
+    const info = document.querySelector("#signin-info");
+    info.innerHTML = "SHIV is starting...";
     const sessionInitialized = await AuthService.init();
     if (sessionInitialized) {
-      PopupUI.init();
+      PopupUI.init(false);
       VaultService.init();
     } else {
+      info.innerHTML = "Sign-in is needed";
       document.querySelector("#signin").addEventListener("submit", async (e) => {
         e.preventDefault();
         const email = document.getElementById("email").value;
         const password = document.getElementById("password").value;
         if (await AuthService.signin(email, password)) {
           e.target.reset();
-          PopupUI.init();
+          PopupUI.init(false);
           VaultService.init();
         }
       });
@@ -3188,6 +3191,7 @@ ${base64}
     });
   });
   var PopupUI = class {
+    static activeDisplay = "";
     static async init(logout = false) {
       document.querySelector("#signin").style.display = logout ? "" : "none";
       document.querySelector("#app").style.display = logout ? "none" : "";

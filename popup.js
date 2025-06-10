@@ -3,11 +3,14 @@ import { VaultService } from "./core/service/vault.service.js";
 import { LocalStorage } from "./core/utils/local.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
+    const info = document.querySelector('#signin-info');
+    info.innerHTML = 'SHIV is starting...';
     const sessionInitialized = await AuthService.init();
     if (sessionInitialized) {
-        PopupUI.init();
+        PopupUI.init(false);
         VaultService.init();
     } else {
+        info.innerHTML = 'Sign-in is needed';
         /**
          * LOGIN
          */
@@ -21,7 +24,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 // ---
                 if (await AuthService.signin(email, password)) {
                     e.target.reset();
-                    PopupUI.init();
+                    PopupUI.init(false);
                     VaultService.init();
                 }
             });
@@ -41,6 +44,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 class PopupUI {
+    static activeDisplay = "";
     static async init(logout = false) {
         document.querySelector("#signin").style.display = logout ? '' : "none";
         document.querySelector("#app").style.display = logout ? 'none' : "";
