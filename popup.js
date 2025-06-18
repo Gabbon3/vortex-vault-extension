@@ -36,11 +36,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     //     const started = await AuthService.startSession();
     //     console.log(started);
     // })
+    const vaultInfo = document.getElementById('vault-info');
     document.getElementById('logout-btn').addEventListener('click', async () => {
         if (!confirm('Signout?')) return;
         await AuthService.signout();
         PopupUI.init(true);
-    })
+    });
+    /**
+     * SMART SYNC
+     */
+    document.getElementById('smartsync-btn').addEventListener('click', async () => {
+        vaultInfo.innerHTML = "Downloading latest data from your vault...";
+        if (await VaultService.syncronize(false)) {
+            setTimeout(() => {
+                vaultInfo.innerHTML = "Vault is up to date";
+            }, 2000);
+        } else {
+            vaultInfo.innerHTML = "Something went wrong, try 'full sync' instead";
+        }
+    });
+    /**
+     * FULL SYNC
+     */
+    document.getElementById('fullsync-btn').addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to fully synchronize with the server?')) return;
+        vaultInfo.innerHTML = "Downloading all data from your vault...";
+        if (await VaultService.syncronize(false)) {
+            setTimeout(() => {
+                vaultInfo.innerHTML = "Vault is up to date";
+            }, 2000);
+        } else {
+            vaultInfo.innerHTML = "Something went wrong, you may need to log in again";
+        }
+    });
 });
 
 class PopupUI {

@@ -8,6 +8,9 @@ import { LocalStorage } from "../utils/local.js";
 import { VaultLocal } from "./vault.local.js";
 
 export class VaultService {
+    // POPUP VAR
+    static info = null;
+    // -----
     static master_key = null;
     static salt = null;
     static vaults = [];
@@ -17,7 +20,9 @@ export class VaultService {
      * 
      */
     static async init(full = false) {
-        // ---
+        // POPUP VAR
+        this.info = document.querySelector('#signin-info');
+        // -----
         const configured = await VaultService.configSecrets();
         // -- se non ci sono provo ad avviare la sessione
         if (!configured) return false;

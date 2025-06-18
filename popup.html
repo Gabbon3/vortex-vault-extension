@@ -10,9 +10,13 @@
         SCHERMATA DI DEFAULT
         -->
         <div id="app" class="container" style="display: none;">
-            <h3>Hi <span id="user-email"></span></h3>
-            <!-- <button id="unlock-vault">Unlock Vault</button> -->
-            <button id="logout-btn">Logout</button>
+            <h3>Hi <strong id="user-email"></strong></h3>
+            <p id="vault-info">Vault is ready</p>
+            <div class="flex-container">
+                <button id="fullsync-btn" title="Download all data from the server. Useful if local data is corrupt or outdated.">Full Sync</button>
+                <button id="smartsync-btn" title="Download only the latest changes from the server. Fast and optimized.">Smart Sync</button>
+                <button id="logout-btn" class="fg-1" title="Delete this session and all local data.">Logout</button>
+            </div>
         </div>
         <!-- 
         LOGIN SE NON è LOGGATO L'UTENTE

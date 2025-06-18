@@ -2938,6 +2938,9 @@ ${base64}
 
   // core/service/vault.service.js
   var VaultService = class _VaultService {
+    // POPUP VAR
+    static info = null;
+    // -----
     static master_key = null;
     static salt = null;
     static vaults = [];
@@ -2947,6 +2950,7 @@ ${base64}
      * 
      */
     static async init(full = false) {
+      this.info = document.querySelector("#signin-info");
       const configured = await _VaultService.configSecrets();
       if (!configured) return false;
       const initialized = await _VaultService.syncronize(full);
@@ -3184,10 +3188,32 @@ ${base64}
         }
       });
     }
+    const vaultInfo = document.getElementById("vault-info");
     document.getElementById("logout-btn").addEventListener("click", async () => {
       if (!confirm("Signout?")) return;
       await AuthService.signout();
       PopupUI.init(true);
+    });
+    document.getElementById("smartsync-btn").addEventListener("click", async () => {
+      vaultInfo.innerHTML = "Downloading latest data from your vault...";
+      if (await VaultService.syncronize(false)) {
+        setTimeout(() => {
+          vaultInfo.innerHTML = "Vault is up to date";
+        }, 2e3);
+      } else {
+        vaultInfo.innerHTML = "Something went wrong, try 'full sync' instead";
+      }
+    });
+    document.getElementById("fullsync-btn").addEventListener("click", async () => {
+      if (!confirm("Are you sure you want to fully synchronize with the server?")) return;
+      vaultInfo.innerHTML = "Downloading all data from your vault...";
+      if (await VaultService.syncronize(false)) {
+        setTimeout(() => {
+          vaultInfo.innerHTML = "Vault is up to date";
+        }, 2e3);
+      } else {
+        vaultInfo.innerHTML = "Something went wrong, you may need to log in again";
+      }
     });
   });
   var PopupUI = class {

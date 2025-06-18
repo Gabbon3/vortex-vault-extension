@@ -62,7 +62,7 @@ class ContentService {
     font-family: sans-serif;
     font-size: 14px;
     max-width: 400px;
-    min-width: 250px;
+    min-width: 325px;
     overflow-y: scroll;
     scrollbar-width: none;
     font-family: monospace !important;
