@@ -2313,7 +2313,7 @@ ${base64}
   var Config = class {
     static dev = false;
     // ---
-    static origin = this.dev ? "http://localhost:3000" : "https://vortexvault.fly.dev";
+    static origin = this.dev ? "http://localhost:3000" : "https://vortexvault.org";
   };
 
   // core/secure/ecdh.js
@@ -2913,13 +2913,19 @@ ${base64}
      * @param {Uint8Array} key 
      */
     static async sync_update(vaults, key) {
-      const local_vaults = await this.get(key);
+      let local_vaults = await this.get(key);
+      const vaultMap = new Map(local_vaults.map((v) => [v.id, v]));
       for (const vault of vaults) {
-        const index = this.get_index(local_vaults, vault.id);
-        index !== -1 ? local_vaults[index] = vault : local_vaults.push(vault);
+        if (vault.deleted) {
+          vaultMap.delete(vault.id);
+        } else {
+          vaultMap.set(vault.id, vault);
+        }
       }
-      await this.save(local_vaults, key);
-      return local_vaults;
+      const updatedVaults = Array.from(vaultMap.values());
+      await this.save(updatedVaults, key);
+      console.log(`[sync_update] Total received: ${vaults.length}, Deleted: ${vaults.filter((v) => v.deleted).length}`);
+      return updatedVaults;
     }
     /**
      * Aggiorna il singolo vault
@@ -2983,11 +2989,8 @@ ${base64}
       const vault_update = await LocalStorage.get("vault-update") ?? null;
       let selectFrom = null;
       if (vault_update) selectFrom = new Date(Date.now() - this.getDateDiff);
-      this.vaults = [];
-      try {
-        this.vaults = await VaultLocal.get(this.master_key);
-      } catch (error) {
-        console.log("[X] Errore crittografico localstorage", error);
+      this.vaults = await VaultLocal.get(this.master_key);
+      if (this.vaults.length === 0) {
         console.log("[i] Sincronizzo completamente con il vault");
         full = true;
       }

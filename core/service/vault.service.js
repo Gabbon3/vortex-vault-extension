@@ -69,16 +69,14 @@ export class VaultService {
         /**
          * Provo ad ottenere i vault dal localstorage
          */
-        this.vaults = [];
-        try {
-            this.vaults = await VaultLocal.get(this.master_key);
-        } catch (error) {
-            console.log('[X] Errore crittografico localstorage', error);
+        this.vaults = await VaultLocal.get(this.master_key);
+        if (this.vaults.length === 0) {
             console.log('[i] Sincronizzo completamente con il vault');
             full = true;
         }
         /**
-         * Se ce stato un errore nell'ottenerli dal localstorage, effettuo una sincronizzazione completa
+         * VaultLocal.get restituisce [] anche nel caso in cui ce stato un errore crittografico
+         * in ogni caso se è vuoto effettuo una sincronizzazione completa con il server
          */
         try {
             /**
