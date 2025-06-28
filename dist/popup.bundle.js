@@ -2184,79 +2184,110 @@ ${base64}
 
   // core/secure/aesgcm.js
   var AES256GCM = class {
+    // mappa per gestire la configurazione delle versioni
+    static versionMap = {
+      1: {
+        nonceLength: 12,
+        tagLength: 128,
+        // bit
+        algorithm: "AES-GCM"
+      }
+    };
     // mappa di supporto per riutilizzare le stesse crypto key
     static keyMap = /* @__PURE__ */ new Map();
     /**
      * Importa una chiave AES-256-GCM da un buffer, se necessario.
      * Se riceve già una CryptoKey, la restituisce direttamente.
-     * 
-     * @param {Uint8Array|CryptoKey} key_input
+     *
+     * @param {Uint8Array|CryptoKey} inputKey
+     * @param {number} [version=1] versione utilizzata per la cifratura
      * @returns {Promise<CryptoKey>}
      */
-    static async resolve_key(key_input) {
-      if (key_input instanceof CryptoKey) return key_input;
-      if (key_input instanceof Uint8Array && key_input.length === 32) {
-        const hash = [...key_input].join("");
-        if (this.keyMap.has(hash)) return this.keyMap.get(hash);
-        const key = await self.crypto.subtle.importKey(
+    static async resolveKey(inputKey, version = 1) {
+      if (inputKey instanceof CryptoKey) return inputKey;
+      if (inputKey instanceof Uint8Array && inputKey.length === 32) {
+        const cacheKey = [...inputKey].join("");
+        if (this.keyMap.has(cacheKey)) return this.keyMap.get(cacheKey);
+        const key = await crypto.subtle.importKey(
           "raw",
-          key_input,
-          { name: "AES-GCM" },
+          inputKey,
+          { name: this.versionMap[version].algorithm },
           false,
           ["encrypt", "decrypt"]
         );
-        this.keyMap.set(hash, key);
+        this.keyMap.set(cacheKey, key);
         return key;
       }
-      throw new Error("Invalid key format. Expected 32-byte Uint8Array or CryptoKey.");
+      throw new Error(
+        "Formato chiave non valido, erano attesi 32 byte o una CryptoKey."
+      );
     }
     /**
      * Cifra i dati utilizzando AES-256-GCM.
-     * 
+     *
      * @param {Uint8Array} data - I dati da cifrare.
-     * @param {Uint8Array|CryptoKey} key_buffer - La chiave di cifratura (32 byte per AES-256).
+     * @param {Uint8Array|CryptoKey} keyBuffer - La chiave di cifratura (32 byte per AES-256).
+     * @param {*|Uint8Array} [aad=null] - informazioni aggiuntive da includere per l'autenticazione
+     * @param {number} [version=1] - indica con quale versione i dati sono cifrati
      * @returns {Promise<Uint8Array>} - I dati cifrati concatenati con il nonce e il tag di autenticazione.
      */
-    static async encrypt(data, key_buffer) {
-      const nonce = self.crypto.getRandomValues(new Uint8Array(12));
-      const key = await this.resolve_key(key_buffer);
-      const cipher = await self.crypto.subtle.encrypt(
-        {
-          name: "AES-GCM",
-          iv: nonce
-        },
+    static async encrypt(data, keyBuffer, aad = null, version = 1) {
+      const nonce = crypto.getRandomValues(new Uint8Array(this.versionMap[version].nonceLength));
+      const key = await this.resolveKey(keyBuffer);
+      const options = {
+        name: this.versionMap[version].algorithm,
+        iv: nonce,
+        tagLength: this.versionMap[version].tagLength
+      };
+      const normalizedAad = this.normalizeAad(aad);
+      if (normalizedAad instanceof Uint8Array) options.additionalData = normalizedAad;
+      const cipher = await crypto.subtle.encrypt(
+        options,
         key,
         data
       );
-      const encrypted_data = new Uint8Array(cipher);
-      return new Uint8Array([...nonce, ...encrypted_data]);
+      const encryptedData = new Uint8Array(cipher);
+      return new Uint8Array([version, ...nonce, ...encryptedData]);
     }
     /**
      * Decifra i dati con AES-256-GCM.
-     * 
+     *
      * @param {Uint8Array} encrypted - I dati cifrati concatenati (nonce + dati cifrati + tag).
-     * @param {Uint8Array} key_buffer - La chiave di decifratura (32 byte per AES-256).
+     * @param {Uint8Array} keyBuffer - La chiave di decifratura (32 byte per AES-256).
+     * @param {*|Uint8Array} [aad=null] - informazioni aggiuntive da includere per l'autenticazione
      * @returns {Promise<Uint8Array>} - I dati decifrati.
      */
-    static async decrypt(encrypted, key_buffer) {
-      const nonce = encrypted.slice(0, 12);
-      const encrypted_data = encrypted.slice(12);
-      const key = await this.resolve_key(key_buffer);
+    static async decrypt(encrypted, keyBuffer, aad = null) {
+      const version = encrypted[0];
+      const nonce = encrypted.slice(1, 1 + this.versionMap[version].nonceLength);
+      const encryptedData = encrypted.slice(1 + this.versionMap[version].nonceLength);
+      const key = await this.resolveKey(keyBuffer);
+      const options = {
+        name: this.versionMap[version].algorithm,
+        iv: nonce,
+        tagLength: this.versionMap[version].tagLength
+      };
+      const normalizedAad = this.normalizeAad(aad);
+      if (normalizedAad instanceof Uint8Array) options.additionalData = normalizedAad;
       try {
-        const decrypted = await self.crypto.subtle.decrypt(
-          {
-            name: "AES-GCM",
-            iv: nonce,
-            tagLength: 128
-            // L'AES-GCM ha un tag di 128 bit (16 byte)
-          },
+        const decrypted = await crypto.subtle.decrypt(
+          options,
           key,
-          encrypted_data
+          encryptedData
         );
         return new Uint8Array(decrypted);
       } catch (error) {
         throw new Error("Decryption failed: " + error.message);
       }
+    }
+    /**
+     * Ordina e restituisce l'oggetto json, per evitare ambiguità
+     * con oggetti che contengono chiavi che potrebbero essere ordinate in maniere dirrerenti
+     * @param {Object} data
+     * @returns {Uint8Array|null}
+     */
+    static normalizeAad(data) {
+      return data ? data instanceof Uint8Array ? data : msgpack_min_default.encode(data) : null;
     }
   };
 
@@ -2825,12 +2856,12 @@ ${base64}
      * @param {Uint8Array} ckeKeyAdvanced
      */
     static async initSessionVariables(ckeKeyAdvanced) {
-      const master_key = await LocalStorage.get("master-key", ckeKeyAdvanced);
-      if (!master_key) return false;
+      const KEK = await LocalStorage.get("master-key", ckeKeyAdvanced);
+      if (!KEK) return false;
       const salt = await LocalStorage.get("salt", ckeKeyAdvanced);
       const email = await LocalStorage.get("email-utente");
       SessionStorage.set("cke-key-basic", ckeKeyAdvanced);
-      SessionStorage.set("master-key", master_key);
+      SessionStorage.set("master-key", KEK);
       SessionStorage.set("salt", salt);
       SessionStorage.set("email", email);
       return true;
@@ -2861,12 +2892,12 @@ ${base64}
       if (!keyBasic || !keyAdvanced) return false;
       LocalStorage.set("shared-secret", sharedSecret, keyBasic);
       const salt = Bytes.hex.decode(res.salt);
-      const master_key = await Cripto.deriveKey(password, salt);
+      const KEK = await Cripto.deriveKey(password, salt);
       await LocalStorage.set("email-utente", email);
-      await LocalStorage.set("password-utente", password, master_key);
-      await LocalStorage.set("master-key", master_key, keyBasic);
+      await LocalStorage.set("password-utente", password, KEK);
+      await LocalStorage.set("master-key", KEK, keyBasic);
       await LocalStorage.set("salt", salt, keyBasic);
-      SessionStorage.set("master-key", master_key);
+      SessionStorage.set("master-key", KEK);
       SessionStorage.set("salt", salt);
       SessionStorage.set("uid", res.uid);
       return true;
@@ -2959,7 +2990,7 @@ ${base64}
     // POPUP VAR
     static info = null;
     // -----
-    static master_key = null;
+    static KEK = null;
     static salt = null;
     static vaults = [];
     // Tempo da rimuovere da Date.now() per ottenere i vault piu recenti
@@ -2986,9 +3017,9 @@ ${base64}
     static async configSecrets() {
       const ckeKeyAdvanced = SessionStorage.get("cke-key-basic");
       if (ckeKeyAdvanced === null) return false;
-      this.master_key = await LocalStorage.get("master-key", ckeKeyAdvanced);
+      this.KEK = await LocalStorage.get("master-key", ckeKeyAdvanced);
       this.salt = await LocalStorage.get("salt", ckeKeyAdvanced);
-      return this.master_key && this.salt ? true : false;
+      return this.KEK && this.salt ? true : false;
     }
     /**
      * Sincronizza e inizializza il Vault con il db
@@ -2997,31 +3028,35 @@ ${base64}
      */
     static async syncronize(full = false) {
       const configured = await this.configSecrets();
-      if (!configured || !this.master_key) return alert("Any Crypto Key founded");
+      if (!configured || !this.KEK)
+        return Log.summon(2, "Any Crypto Key founded");
       const vault_update = await LocalStorage.get("vault-update") ?? null;
       let selectFrom = null;
       if (vault_update) selectFrom = new Date(Date.now() - this.getDateDiff);
-      this.vaults = await VaultLocal.get(this.master_key);
+      this.vaults = await VaultLocal.get(this.KEK);
       if (this.vaults.length === 0) {
         console.log("[i] Sincronizzo completamente con il vault");
         full = true;
       }
       try {
-        if (!full) {
-          const n_local_vaults = this.vaults.length;
-          const n_db_vaults = await this.count();
-          if (n_local_vaults > n_db_vaults) full = true;
-        }
         const vaults_from_db = await this.get(full ? null : selectFrom);
         if (vaults_from_db.length > 0) {
           if (full) {
-            await VaultLocal.save(vaults_from_db, this.master_key);
+            await VaultLocal.save(
+              vaults_from_db.filter((vault) => {
+                return vault.deleted == false;
+              }),
+              this.KEK
+            );
             this.vaults = vaults_from_db;
           } else {
-            this.vaults = await VaultLocal.sync_update(vaults_from_db, this.master_key);
+            this.vaults = await VaultLocal.sync_update(
+              vaults_from_db,
+              this.KEK
+            );
           }
         } else {
-          if (full) await VaultLocal.save([], this.master_key);
+          if (full) await VaultLocal.save([], this.KEK);
         }
       } catch (error) {
         console.warn("Sync Error - Vault => ", error);
@@ -3043,7 +3078,7 @@ ${base64}
       });
       if (!res) return null;
       if (res.length > 0) LocalStorage.set("vault-update", /* @__PURE__ */ new Date());
-      return await this.decrypt_vaults(res) ? res : null;
+      return await this.decryptAllVaults(res) ? res : null;
     }
     /**
      * Restituisce il numero totale di vault del db
@@ -3075,34 +3110,47 @@ ${base64}
     }
     /**
      * Cifra un vault
-     * @param {Object} vault 
-     * @param {Uint8Array} provided_salt 
-     * @returns {Uint8Array}
+     * @param {Object} vault
+     * @param {Uint8Array} providedDEK
+     * @returns {{ DEK: Uint8Array, VLT: Uint8Array }}
      */
-    static async encrypt(vault, provided_salt = null, master_key = this.master_key) {
-      const salt = provided_salt || Cripto.random_bytes(16);
-      const key = await Cripto.hmac(salt, master_key);
-      const vault_bytes = msgpack_min_default.encode(vault);
-      const encrypted_vault = await AES256GCM.encrypt(vault_bytes, key);
-      return Bytes.merge([salt, encrypted_vault], 8);
+    static async encrypt(vault, providedDEK = null, KEK = this.KEK) {
+      const DEK = providedDEK || Cripto.randomBytes(32);
+      const encryptedDEK = await AES256GCM.encrypt(DEK, KEK);
+      const encodedVault = msgpack_min_default.encode(vault);
+      const encryptedVault = await AES256GCM.encrypt(encodedVault, DEK);
+      return {
+        DEK: msgpack_min_default.encode({
+          // DEK Data Encryption Key: le info sulla chiave e la chiave cifrata
+          kek: 1,
+          // Key Encryption Key version
+          algo: "aesgcm",
+          dek: encryptedDEK
+        }),
+        VLT: encryptedVault
+        // VLT = Vault
+      };
     }
     /**
      * Decifra un vault
-     * @param {Uint8Array} encrypted_bytes 
-     * @return {Object} - il vault decifrato
+     * @param {Uint8Array} encrypted
+     * @param {Uint8Array} DEKEncoded
+     * @return {{ DEK: Uint8Array, VLT: Object }} - il vault decifrato insieme alla DEK cifrata
      */
-    static async decrypt(encrypted_bytes, master_key = this.master_key) {
-      const salt = encrypted_bytes.subarray(0, 16);
-      const encrypted_vault = encrypted_bytes.subarray(16);
-      const key = await Cripto.hmac(salt, master_key);
-      const decrypted_vault = await AES256GCM.decrypt(encrypted_vault, key);
-      return msgpack_min_default.decode(decrypted_vault);
+    static async decrypt(encryptedVault, DEKEncoded, KEK = this.KEK) {
+      const decodedDEK = msgpack_min_default.decode(DEKEncoded);
+      const DEK = await AES256GCM.decrypt(decodedDEK.dek, KEK);
+      const decryptedVault = await AES256GCM.decrypt(encryptedVault, DEK);
+      return {
+        DEK: DEKEncoded,
+        VLT: msgpack_min_default.decode(decryptedVault)
+      };
     }
     /**
      * Compatta i vaults per renderli pronti all esportazione
      * @returns {Array<Object>} l'array dei vault compattati
      */
-    static compact_vaults(vaults = this.vaults) {
+    static compactVaults(vaults = this.vaults) {
       return vaults.map((vault) => {
         const { secrets: S, createdAt: C, updatedAt: U } = vault;
         return { S, C, U };
@@ -3110,43 +3158,29 @@ ${base64}
     }
     /**
      * Decompatta i vaults per renderli nuovamente utilizzabili
-     * @param {Array<Object>} compacted_vaults 
+     * @param {Array<Object>} compacted_vaults
      */
-    static decompact_vaults(compacted_vaults) {
+    static decompactVaults(compacted_vaults) {
       return compacted_vaults.map((vault) => {
         const { S: secrets, C: createdAt, U: updatedAt } = vault;
         return { secrets, createdAt, updatedAt };
       });
     }
     /**
-     * Cifra tutti i vault 
+     * Decifra tutti i vault
      * @param {Array<Object>} vaults - array dei vari vault
      */
-    static async encrypt_vaults(vaults) {
+    static async decryptAllVaults(vaults) {
+      if (vaults instanceof Array === false || vaults.length === 0)
+        return true;
       let i = 0;
       try {
         for (i = 0; i < vaults.length; i++) {
-          const encrypted_bytes = await this.encrypt(vaults[i]);
-          vaults[i].secrets = encrypted_bytes;
-        }
-      } catch (error) {
-        console.warn(`Decrypt Vault error at i = ${i}:`, error);
-        return false;
-      }
-      return true;
-    }
-    /**
-     * Decifra tutti i vault 
-     * @param {Array<Object>} vaults - array dei vari vault
-     */
-    static async decrypt_vaults(vaults) {
-      if (vaults instanceof Array === false || vaults.length === 0) return true;
-      let i = 0;
-      try {
-        for (i = 0; i < vaults.length; i++) {
-          const encrypted_bytes = new Uint8Array(vaults[i].secrets.data);
-          const data = await this.decrypt(encrypted_bytes);
-          vaults[i].secrets = data;
+          const VLTBytes = new Uint8Array(vaults[i].secrets.data);
+          const DEKBytes = new Uint8Array(vaults[i].dek.data);
+          const { DEK, VLT } = await this.decrypt(VLTBytes, DEKBytes);
+          vaults[i].secrets = VLT;
+          vaults[i].dek = DEK;
         }
       } catch (error) {
         console.warn(`Decrypt Vault error at i = ${i}:`, error);

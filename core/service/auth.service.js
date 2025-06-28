@@ -62,13 +62,13 @@ export class AuthService {
      * @param {Uint8Array} ckeKeyAdvanced
      */
     static async initSessionVariables(ckeKeyAdvanced) {
-        const master_key = await LocalStorage.get("master-key", ckeKeyAdvanced);
-        if (!master_key) return false;
+        const KEK = await LocalStorage.get("master-key", ckeKeyAdvanced);
+        if (!KEK) return false;
         const salt = await LocalStorage.get("salt", ckeKeyAdvanced);
         const email = await LocalStorage.get("email-utente");
         // ---
         SessionStorage.set("cke-key-basic", ckeKeyAdvanced);
-        SessionStorage.set("master-key", master_key);
+        SessionStorage.set("master-key", KEK);
         SessionStorage.set("salt", salt);
         SessionStorage.set("email", email);
         // ---
@@ -109,17 +109,17 @@ export class AuthService {
         LocalStorage.set("shared-secret", sharedSecret, keyBasic);
         // -- derivo la chiave crittografica
         const salt = Bytes.hex.decode(res.salt);
-        const master_key = await Cripto.deriveKey(password, salt);
+        const KEK = await Cripto.deriveKey(password, salt);
         // -- cifro le credenziali sul localstorage
         await LocalStorage.set("email-utente", email);
-        await LocalStorage.set("password-utente", password, master_key);
+        await LocalStorage.set("password-utente", password, KEK);
         /**
          * TODO: rimettere poi quando funziona la passkey keyAdvanced
          */
-        await LocalStorage.set("master-key", master_key, keyBasic);
+        await LocalStorage.set("master-key", KEK, keyBasic);
         await LocalStorage.set("salt", salt, keyBasic);
         // -- imposto quelle in chiaro sul session storage
-        SessionStorage.set("master-key", master_key);
+        SessionStorage.set("master-key", KEK);
         SessionStorage.set("salt", salt);
         SessionStorage.set("uid", res.uid);
         // ---

@@ -11,7 +11,7 @@ export class VaultService {
     // POPUP VAR
     static info = null;
     // -----
-    static master_key = null;
+    static KEK = null;
     static salt = null;
     static vaults = [];
     // Tempo da rimuovere da Date.now() per ottenere i vault piu recenti
@@ -46,9 +46,9 @@ export class VaultService {
         const ckeKeyAdvanced = SessionStorage.get('cke-key-basic');
         // - se scaduto restituisco false cosi verrà rigenerata la sessione
         if (ckeKeyAdvanced === null) return false;
-        this.master_key = await LocalStorage.get('master-key', ckeKeyAdvanced);
+        this.KEK = await LocalStorage.get('master-key', ckeKeyAdvanced);
         this.salt = await LocalStorage.get('salt', ckeKeyAdvanced);
-        return this.master_key && this.salt ? true : false;
+        return this.KEK && this.salt ? true : false;
     }
     /**
      * Sincronizza e inizializza il Vault con il db
@@ -57,21 +57,22 @@ export class VaultService {
      */
     static async syncronize(full = false) {
         const configured = await this.configSecrets();
-        if (!configured || !this.master_key) return alert('Any Crypto Key founded');
-        const vault_update = await LocalStorage.get('vault-update') ?? null;
+        if (!configured || !this.KEK)
+            return Log.summon(2, "Any Crypto Key founded");
+        const vault_update = (await LocalStorage.get("vault-update")) ?? null;
         let selectFrom = null;
         /**
          * non mi allineo esattamente alla data di ultima sincronizzazione dal db
          * in questo modo evito di farmi restituire dati incompleti per
          * disincronizzazione tra client e server
          */
-        if (vault_update) selectFrom = new Date(Date.now() - (this.getDateDiff));
+        if (vault_update) selectFrom = new Date(Date.now() - this.getDateDiff);
         /**
          * Provo ad ottenere i vault dal localstorage
          */
-        this.vaults = await VaultLocal.get(this.master_key);
+        this.vaults = await VaultLocal.get(this.KEK);
         if (this.vaults.length === 0) {
-            console.log('[i] Sincronizzo completamente con il vault');
+            console.log("[i] Sincronizzo completamente con il vault");
             full = true;
         }
         /**
@@ -79,33 +80,30 @@ export class VaultService {
          * in ogni caso se è vuoto effettuo una sincronizzazione completa con il server
          */
         try {
-            /**
-             * se non è richiesta la sincronizzazione completa
-             * effettuo una sincronizzazione completa se qualcosa è stato eliminato
-             */
-            if (!full) {
-                const n_local_vaults = this.vaults.length;
-                const n_db_vaults = await this.count();
-                // recupero tutti i vault se per esempio un vault è stato eliminato sul db
-                if (n_local_vaults > n_db_vaults) full = true;
-            }
-            // ---
             const vaults_from_db = await this.get(full ? null : selectFrom);
             if (vaults_from_db.length > 0) {
                 if (full) {
-                    await VaultLocal.save(vaults_from_db, this.master_key);
+                    await VaultLocal.save(
+                        vaults_from_db.filter((vault) => {
+                            return vault.deleted == false;
+                        }),
+                        this.KEK
+                    );
                     this.vaults = vaults_from_db;
                 } else {
-                    this.vaults = await VaultLocal.sync_update(vaults_from_db, this.master_key)
+                    this.vaults = await VaultLocal.sync_update(
+                        vaults_from_db,
+                        this.KEK
+                    );
                 }
             } else {
                 // -- se eseguendo il sync totale non ci sono vault nel db allora azzero per sicurezza anche in locale
-                if (full) await VaultLocal.save([], this.master_key);
+                if (full) await VaultLocal.save([], this.KEK);
             }
         } catch (error) {
-            console.warn('Sync Error - Vault => ', error);
-            LocalStorage.remove('vault-update');
-            LocalStorage.remove('vaults');
+            console.warn("Sync Error - Vault => ", error);
+            LocalStorage.remove("vault-update");
+            LocalStorage.remove("vaults");
             return false;
         }
         return true;
@@ -125,7 +123,7 @@ export class VaultService {
         // ---
         if (res.length > 0) LocalStorage.set('vault-update', new Date());
         // ---
-        return await this.decrypt_vaults(res) ? res : null;
+        return await this.decryptAllVaults(res) ? res : null;
     }
     /**
      * Restituisce il numero totale di vault del db
@@ -157,42 +155,55 @@ export class VaultService {
     }
     /**
      * Cifra un vault
-     * @param {Object} vault 
-     * @param {Uint8Array} provided_salt 
-     * @returns {Uint8Array}
+     * @param {Object} vault
+     * @param {Uint8Array} providedDEK
+     * @returns {{ DEK: Uint8Array, VLT: Uint8Array }}
      */
-    static async encrypt(vault, provided_salt = null, master_key = this.master_key) {
-        // -- derivo la chiave specifica del vault
-        const salt = provided_salt || Cripto.random_bytes(16);
-        const key = await Cripto.hmac(salt, master_key);
+    static async encrypt(vault, providedDEK = null, KEK = this.KEK) {
+        // -- genero una dek specifica per l'elemento
+        const DEK = providedDEK || Cripto.randomBytes(32);
+        const encryptedDEK = await AES256GCM.encrypt(DEK, KEK);
         // -- cifro il vault
-        const vault_bytes = msgpack.encode(vault);
-        const encrypted_vault = await AES256GCM.encrypt(vault_bytes, key);
+        const encodedVault = msgpack.encode(vault);
+        const encryptedVault = await AES256GCM.encrypt(encodedVault, DEK);
         // -- unisco il salt al vault cifrato
-        return Bytes.merge([salt, encrypted_vault], 8);
+        return {
+            DEK: msgpack.encode({
+                // DEK Data Encryption Key: le info sulla chiave e la chiave cifrata
+                kek: 1, // Key Encryption Key version
+                algo: "aesgcm",
+                dek: encryptedDEK,
+            }),
+            VLT: encryptedVault, // VLT = Vault
+        };
     }
     /**
      * Decifra un vault
-     * @param {Uint8Array} encrypted_bytes 
-     * @return {Object} - il vault decifrato
+     * @param {Uint8Array} encrypted
+     * @param {Uint8Array} DEKEncoded
+     * @return {{ DEK: Uint8Array, VLT: Object }} - il vault decifrato insieme alla DEK cifrata
      */
-    static async decrypt(encrypted_bytes, master_key = this.master_key) {
-        // -- ottengo il salt e i dati cifrati
-        const salt = encrypted_bytes.subarray(0, 16);
-        const encrypted_vault = encrypted_bytes.subarray(16);
-        // -- derivo la chiave specifica del vault
-        const key = await Cripto.hmac(salt, master_key);
+    static async decrypt(encryptedVault, DEKEncoded, KEK = this.KEK) {
+        const decodedDEK = msgpack.decode(DEKEncoded);
+        // -- per il momento commentate perche non servono
+        // const algo = decodedEnvelope.DEK.algo;
+        // const kekVersion = decodedEnvelope.DEK.kek;
+        // -- decifro la DEK con la KEK
+        const DEK = await AES256GCM.decrypt(decodedDEK.dek, KEK);
         // -- decifro i dati
-        const decrypted_vault = await AES256GCM.decrypt(encrypted_vault, key);
-        // -- decodifico i dati
-        return msgpack.decode(decrypted_vault);
+        const decryptedVault = await AES256GCM.decrypt(encryptedVault, DEK);
+        // ---
+        return {
+            DEK: DEKEncoded,
+            VLT: msgpack.decode(decryptedVault)
+        };
     }
     /**
      * Compatta i vaults per renderli pronti all esportazione
      * @returns {Array<Object>} l'array dei vault compattati
      */
-    static compact_vaults(vaults = this.vaults) {
-        return vaults.map(vault => {
+    static compactVaults(vaults = this.vaults) {
+        return vaults.map((vault) => {
             // non tengo conto dell'uuid, poiche posso tranquillamente ricrearlo
             // const { id: I, secrets: S, createdAt: C, updatedAt: U } = vault;
             const { secrets: S, createdAt: C, updatedAt: U } = vault;
@@ -201,10 +212,10 @@ export class VaultService {
     }
     /**
      * Decompatta i vaults per renderli nuovamente utilizzabili
-     * @param {Array<Object>} compacted_vaults 
+     * @param {Array<Object>} compacted_vaults
      */
-    static decompact_vaults(compacted_vaults) {
-        return compacted_vaults.map(vault => {
+    static decompactVaults(compacted_vaults) {
+        return compacted_vaults.map((vault) => {
             // non tengo conto dell'uuid, poiche posso tranquillamente ricrearlo
             // const { I: id, S: secrets, C: createdAt, U: updatedAt } = vault;
             const { S: secrets, C: createdAt, U: updatedAt } = vault;
@@ -212,38 +223,22 @@ export class VaultService {
         });
     }
     /**
-     * Cifra tutti i vault 
+     * Decifra tutti i vault
      * @param {Array<Object>} vaults - array dei vari vault
      */
-    static async encrypt_vaults(vaults) {
+    static async decryptAllVaults(vaults) {
+        if (vaults instanceof Array === false || vaults.length === 0)
+            return true;
         let i = 0;
         try {
             for (i = 0; i < vaults.length; i++) {
                 // -- decripto i secrets
-                const encrypted_bytes = await this.encrypt(vaults[i]);
-                // ---
-                vaults[i].secrets = encrypted_bytes;
-            }
-        } catch (error) {
-            console.warn(`Decrypt Vault error at i = ${i}:`, error);
-            return false;
-        }
-        return true;
-    }
-    /**
-     * Decifra tutti i vault 
-     * @param {Array<Object>} vaults - array dei vari vault
-     */
-    static async decrypt_vaults(vaults) {
-        if (vaults instanceof Array === false || vaults.length === 0) return true;
-        let i = 0;
-        try {
-            for (i = 0; i < vaults.length; i++) {
-                // -- decripto i secrets
-                const encrypted_bytes = new Uint8Array(vaults[i].secrets.data);
-                const data = await this.decrypt(encrypted_bytes);
+                const VLTBytes = new Uint8Array(vaults[i].secrets.data);
+                const DEKBytes = new Uint8Array(vaults[i].dek.data);
+                const { DEK, VLT } = await this.decrypt(VLTBytes, DEKBytes);
                 // --
-                vaults[i].secrets = data;
+                vaults[i].secrets = VLT;
+                vaults[i].dek = DEK;
             }
         } catch (error) {
             console.warn(`Decrypt Vault error at i = ${i}:`, error);
