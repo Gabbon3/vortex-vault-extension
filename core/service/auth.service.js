@@ -84,12 +84,13 @@ export class AuthService {
     static async signin(email, password) {
         // -- genero la coppia di chiavi
         const publicKeyHex = await SHIV.generateKeyPair();
+        const obfuscatedPassword = await Cripto.obfuscatePassword(password);
         // ---
         const res = await API.fetch(`/auth/signin`, {
             method: "POST",
             body: {
                 email,
-                password,
+                password: obfuscatedPassword,
                 publicKey: publicKeyHex,
             },
         });
