@@ -5,6 +5,7 @@ import { LocalStorage } from "../utils/local.js";
 import { API } from "../utils/api.js";
 import { CKE } from "../utils/cke.public.util.js";
 import { SHIV } from "../secure/SHIV.browser.js";
+import { AES256GCM } from "../secure/aesgcm.js";
 
 export class AuthService {
     /**
@@ -53,24 +54,26 @@ export class AuthService {
             return false;
         }
         // -- imposto le variabili di sessione
-        const initialized = await this.initSessionVariables(ckeKeyBasic);
+        const initialized = await this.configSessionVariables(ckeKeyBasic);
         // ---
         return initialized;
     }
     /**
      * Imposta la chiave master dell'utente nel session storage
-     * @param {Uint8Array} ckeKeyAdvanced
+     * @param {Uint8Array} ckeKeyAdvanced 
      */
-    static async initSessionVariables(ckeKeyAdvanced) {
-        const KEK = await LocalStorage.get("master-key", ckeKeyAdvanced);
-        if (!KEK) return false;
-        const salt = await LocalStorage.get("salt", ckeKeyAdvanced);
-        const email = await LocalStorage.get("email-utente");
+    static async configSessionVariables(ckeKeyAdvanced) {
+        const KEK = await LocalStorage.get('master-key', ckeKeyAdvanced);
+        const DEK = await LocalStorage.get('DEK', ckeKeyAdvanced);
+        const salt = await LocalStorage.get('salt', ckeKeyAdvanced);
+        const email = await LocalStorage.get('email-utente');
+        if (!KEK || !DEK) return false;
         // ---
-        SessionStorage.set("cke-key-basic", ckeKeyAdvanced);
-        SessionStorage.set("master-key", KEK);
-        SessionStorage.set("salt", salt);
-        SessionStorage.set("email", email);
+        SessionStorage.set('cke', ckeKeyAdvanced);
+        SessionStorage.set('master-key', KEK);
+        SessionStorage.set('DEK', DEK);
+        SessionStorage.set('salt', salt);
+        SessionStorage.set('email', email);
         // ---
         return true;
     }
@@ -86,8 +89,8 @@ export class AuthService {
         const publicKeyHex = await SHIV.generateKeyPair();
         const obfuscatedPassword = await Cripto.obfuscatePassword(password);
         // ---
-        const res = await API.fetch(`/auth/signin`, {
-            method: "POST",
+        const res = await API.fetch('/auth/signin', {
+            method: 'POST',
             body: {
                 email,
                 password: obfuscatedPassword,
@@ -96,7 +99,7 @@ export class AuthService {
         });
         if (!res) return false;
         // ---
-        const { publicKey: serverPublicKey, bypassToken } = res;
+        const { dek: encodedDek, publicKey: serverPublicKey, bypassToken } = res;
         // -- ottengo il segreto condiviso e lo cifro in localstorage con CKE
         const sharedSecret = await SHIV.completeHandshake(serverPublicKey);
         if (!sharedSecret) return false;
@@ -106,22 +109,24 @@ export class AuthService {
         const { keyBasic, keyAdvanced } = await CKE.set(bypassToken);
         if (!keyBasic || !keyAdvanced) return false;
         // -- cifro localmente lo shared secret con la chiave basic
-        LocalStorage.set("shared-secret", sharedSecret, keyBasic);
+        LocalStorage.set('shared-secret', sharedSecret, keyBasic);
         // -- derivo la chiave crittografica
         const salt = Bytes.hex.decode(res.salt);
         const KEK = await Cripto.deriveKey(password, salt);
+        // ---
+        const encryptedDEK = Bytes.base64.decode(encodedDek);
+        const DEK = await AES256GCM.decrypt(encryptedDEK, KEK);
         // -- cifro le credenziali sul localstorage
-        await LocalStorage.set("email-utente", email);
-        await LocalStorage.set("password-utente", password, KEK);
-        /**
-         * TODO: rimettere poi quando funziona la passkey keyAdvanced
-         */
-        await LocalStorage.set("master-key", KEK, keyBasic);
-        await LocalStorage.set("salt", salt, keyBasic);
+        await LocalStorage.set('email-utente', email);
+        await LocalStorage.set('password-utente', password, KEK);
+        await LocalStorage.set('master-key', KEK, keyBasic);
+        await LocalStorage.set('DEK', DEK, keyBasic);
+        await LocalStorage.set('salt', salt, keyBasic);
         // -- imposto quelle in chiaro sul session storage
-        SessionStorage.set("master-key", KEK);
-        SessionStorage.set("salt", salt);
-        SessionStorage.set("uid", res.uid);
+        SessionStorage.set('master-key', KEK);
+        SessionStorage.set('DEK', DEK);
+        SessionStorage.set('salt', salt);
+        SessionStorage.set('uid', res.uid);
         // ---
         return true;
     }

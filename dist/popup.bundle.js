@@ -2848,20 +2848,22 @@ ${base64}
         console.log("CKE non ottenuta.");
         return false;
       }
-      const initialized = await this.initSessionVariables(ckeKeyBasic);
+      const initialized = await this.configSessionVariables(ckeKeyBasic);
       return initialized;
     }
     /**
      * Imposta la chiave master dell'utente nel session storage
-     * @param {Uint8Array} ckeKeyAdvanced
+     * @param {Uint8Array} ckeKeyAdvanced 
      */
-    static async initSessionVariables(ckeKeyAdvanced) {
+    static async configSessionVariables(ckeKeyAdvanced) {
       const KEK = await LocalStorage.get("master-key", ckeKeyAdvanced);
-      if (!KEK) return false;
+      const DEK = await LocalStorage.get("DEK", ckeKeyAdvanced);
       const salt = await LocalStorage.get("salt", ckeKeyAdvanced);
       const email = await LocalStorage.get("email-utente");
-      SessionStorage.set("cke-key-basic", ckeKeyAdvanced);
+      if (!KEK || !DEK) return false;
+      SessionStorage.set("cke", ckeKeyAdvanced);
       SessionStorage.set("master-key", KEK);
+      SessionStorage.set("DEK", DEK);
       SessionStorage.set("salt", salt);
       SessionStorage.set("email", email);
       return true;
@@ -2876,7 +2878,7 @@ ${base64}
     static async signin(email, password) {
       const publicKeyHex = await SHIV.generateKeyPair();
       const obfuscatedPassword = await Cripto.obfuscatePassword(password);
-      const res = await API.fetch(`/auth/signin`, {
+      const res = await API.fetch("/auth/signin", {
         method: "POST",
         body: {
           email,
@@ -2885,7 +2887,7 @@ ${base64}
         }
       });
       if (!res) return false;
-      const { publicKey: serverPublicKey, bypassToken } = res;
+      const { dek: encodedDek, publicKey: serverPublicKey, bypassToken } = res;
       const sharedSecret = await SHIV.completeHandshake(serverPublicKey);
       if (!sharedSecret) return false;
       const { keyBasic, keyAdvanced } = await CKE.set(bypassToken);
@@ -2893,11 +2895,15 @@ ${base64}
       LocalStorage.set("shared-secret", sharedSecret, keyBasic);
       const salt = Bytes.hex.decode(res.salt);
       const KEK = await Cripto.deriveKey(password, salt);
+      const encryptedDEK = Bytes.base64.decode(encodedDek);
+      const DEK = await AES256GCM.decrypt(encryptedDEK, KEK);
       await LocalStorage.set("email-utente", email);
       await LocalStorage.set("password-utente", password, KEK);
       await LocalStorage.set("master-key", KEK, keyBasic);
+      await LocalStorage.set("DEK", DEK, keyBasic);
       await LocalStorage.set("salt", salt, keyBasic);
       SessionStorage.set("master-key", KEK);
+      SessionStorage.set("DEK", DEK);
       SessionStorage.set("salt", salt);
       SessionStorage.set("uid", res.uid);
       return true;
@@ -2991,6 +2997,7 @@ ${base64}
     static info = null;
     // -----
     static KEK = null;
+    static DEK = null;
     static salt = null;
     static vaults = [];
     // Tempo da rimuovere da Date.now() per ottenere i vault piu recenti
@@ -3018,8 +3025,9 @@ ${base64}
       const ckeKeyAdvanced = SessionStorage.get("cke-key-basic");
       if (ckeKeyAdvanced === null) return false;
       this.KEK = await LocalStorage.get("master-key", ckeKeyAdvanced);
+      this.DEK = await LocalStorage.get("DEK", ckeKeyAdvanced);
       this.salt = await LocalStorage.get("salt", ckeKeyAdvanced);
-      return this.KEK && this.salt ? true : false;
+      return this.KEK && this.DEK && this.salt ? true : false;
     }
     /**
      * Sincronizza e inizializza il Vault con il db
@@ -3028,12 +3036,12 @@ ${base64}
      */
     static async syncronize(full = false) {
       const configured = await this.configSecrets();
-      if (!configured || !this.KEK)
-        return Log.summon(2, "Any Crypto Key founded");
+      if (!configured)
+        return alert(2, "Any Crypto Key founded");
       const vault_update = await LocalStorage.get("vault-update") ?? null;
       let selectFrom = null;
       if (vault_update) selectFrom = new Date(Date.now() - this.getDateDiff);
-      this.vaults = await VaultLocal.get(this.KEK);
+      this.vaults = await VaultLocal.get(this.DEK);
       if (this.vaults.length === 0) {
         console.log("[i] Sincronizzo completamente con il vault");
         full = true;
@@ -3046,17 +3054,17 @@ ${base64}
               vaults_from_db.filter((vault) => {
                 return vault.deleted == false;
               }),
-              this.KEK
+              this.DEK
             );
             this.vaults = vaults_from_db;
           } else {
             this.vaults = await VaultLocal.sync_update(
               vaults_from_db,
-              this.KEK
+              this.DEK
             );
           }
         } else {
-          if (full) await VaultLocal.save([], this.KEK);
+          if (full) await VaultLocal.save([], this.DEK);
         }
       } catch (error) {
         console.warn("Sync Error - Vault => ", error);
@@ -3081,70 +3089,25 @@ ${base64}
       return await this.decryptAllVaults(res) ? res : null;
     }
     /**
-     * Restituisce il numero totale di vault del db
-     * @returns {number}
-     */
-    static async count() {
-      const res = await API.fetch("/vaults/count", {
-        method: "GET"
-      });
-      if (!res) return 0;
-      return res.count;
-    }
-    /**
-     * Restituisce un vault tramite id
-     * @param {string} vault_id 
-     * @returns {Object}
-     */
-    static get_vault(vault_id) {
-      return this.vaults[this.get_index(vault_id)];
-    }
-    /**
-     * Restituisce l'index di un vault
-     * @param {Array<Object>} vaults 
-     * @param {string} vault_id 
-     * @returns {string}
-     */
-    static get_index(vault_id, vaults = this.vaults) {
-      return vaults.findIndex((vault) => vault.id === vault_id);
-    }
-    /**
      * Cifra un vault
      * @param {Object} vault
-     * @param {Uint8Array} providedDEK
-     * @returns {{ DEK: Uint8Array, VLT: Uint8Array }}
+     * @param {Uint8Array} [DEK=this.DEK] 
+     * @returns {Uint8Array}
      */
-    static async encrypt(vault, providedDEK = null, KEK = this.KEK) {
-      const DEK = providedDEK || Cripto.randomBytes(32);
-      const encryptedDEK = await AES256GCM.encrypt(DEK, KEK);
+    static async encrypt(vault, DEK = this.DEK) {
       const encodedVault = msgpack_min_default.encode(vault);
       const encryptedVault = await AES256GCM.encrypt(encodedVault, DEK);
-      return {
-        DEK: msgpack_min_default.encode({
-          // DEK Data Encryption Key: le info sulla chiave e la chiave cifrata
-          kek: 1,
-          // Key Encryption Key version
-          algo: "aesgcm",
-          dek: encryptedDEK
-        }),
-        VLT: encryptedVault
-        // VLT = Vault
-      };
+      return encryptedVault;
     }
     /**
      * Decifra un vault
      * @param {Uint8Array} encrypted
-     * @param {Uint8Array} DEKEncoded
-     * @return {{ DEK: Uint8Array, VLT: Object }} - il vault decifrato insieme alla DEK cifrata
+     * @param {Uint8Array} DEK
+     * @return {Object} - il vault decifrato insieme alla DEK cifrata
      */
-    static async decrypt(encryptedVault, DEKEncoded, KEK = this.KEK) {
-      const decodedDEK = msgpack_min_default.decode(DEKEncoded);
-      const DEK = await AES256GCM.decrypt(decodedDEK.dek, KEK);
+    static async decrypt(encryptedVault, DEK = this.DEK) {
       const decryptedVault = await AES256GCM.decrypt(encryptedVault, DEK);
-      return {
-        DEK: DEKEncoded,
-        VLT: msgpack_min_default.decode(decryptedVault)
-      };
+      return msgpack_min_default.decode(decryptedVault);
     }
     /**
      * Compatta i vaults per renderli pronti all esportazione
@@ -3176,11 +3139,9 @@ ${base64}
       let i = 0;
       try {
         for (i = 0; i < vaults.length; i++) {
-          const VLTBytes = new Uint8Array(vaults[i].secrets.data);
-          const DEKBytes = new Uint8Array(vaults[i].dek.data);
-          const { DEK, VLT } = await this.decrypt(VLTBytes, DEKBytes);
-          vaults[i].secrets = VLT;
-          vaults[i].dek = DEK;
+          const encryptedSecrets = new Uint8Array(vaults[i].secrets.data);
+          const secrets = await this.decrypt(encryptedSecrets);
+          vaults[i].secrets = secrets;
         }
       } catch (error) {
         console.warn(`Decrypt Vault error at i = ${i}:`, error);
