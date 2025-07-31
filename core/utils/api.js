@@ -27,7 +27,7 @@ export class API {
                 delete options.auth;
             }
             // -- aggiungo l'header integrity se presente
-            const integrity = await SHIV.getIntegrity(options.body ?? {}, options.method, endpoint);
+            const integrity = await SHIV.getIntegrity(options.method, endpoint);
             if (integrity) {
                 options.headers['X-Integrity'] = integrity;
             }

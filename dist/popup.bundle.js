@@ -2468,19 +2468,17 @@ ${base64}
     /**
      * Restituisce la stringa di integrità 
      * da associare alle fetch come header
-     * @param {{}} [body={}] - il body della request, in questo modo leghiamo l'integrity con il body, si possono intercettare modifiche al body
      * @param {string} method - metodo usato per la fetch (GET, POST...)
      * @param {string} endpoint - endpoint su cui verrà effettuata la fetch
      * @returns {string} stringa esadecimale dell'integrità
      */
-    static async getIntegrity(body = {}, method = "", endpoint = "") {
+    static async getIntegrity(method = "", endpoint = "") {
       const sharedSecret = SessionStorage.get("shared-secret");
       if (sharedSecret instanceof Uint8Array == false) return null;
-      const salt = Cripto.random_bytes(12);
-      const encodedBody = body instanceof Uint8Array ? body : msgpack_min_default.encode(body);
+      const salt = Cripto.randomBytes(12);
       const encodedMethod = new TextEncoder().encode(method.toLowerCase());
       const encodedEndpoint = new TextEncoder().encode(this.normalizeEndpoint(endpoint));
-      const payload = Bytes.merge([salt, encodedBody, encodedMethod, encodedEndpoint], 8);
+      const payload = Bytes.merge([salt, encodedMethod, encodedEndpoint], 8);
       const derivedKey = await this.deriveKey(sharedSecret, salt);
       const encrypted = await Cripto.hmac(payload, derivedKey);
       const result = Bytes.merge([salt, encrypted], 8);
@@ -2569,7 +2567,7 @@ ${base64}
           options.headers["x-authentication-method"] = options.auth;
           delete options.auth;
         }
-        const integrity = await SHIV.getIntegrity(options.body ?? {}, options.method, endpoint);
+        const integrity = await SHIV.getIntegrity(options.method, endpoint);
         if (integrity) {
           options.headers["X-Integrity"] = integrity;
         }
