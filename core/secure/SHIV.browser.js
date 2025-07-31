@@ -29,7 +29,7 @@ export class SHIV {
         // ---
         if (sharedSecret instanceof Uint8Array == false) return null;
         // -- genero un salt casuale
-        const salt = Cripto.randomBytes(12);
+        const salt = Cripto.random_bytes(12);
         // -- codifico le variabili del payload
         const encodedMethod = new TextEncoder().encode(method.toLowerCase());
         const encodedEndpoint = new TextEncoder().encode(this.normalizeEndpoint(endpoint));

@@ -2475,7 +2475,7 @@ ${base64}
     static async getIntegrity(method = "", endpoint = "") {
       const sharedSecret = SessionStorage.get("shared-secret");
       if (sharedSecret instanceof Uint8Array == false) return null;
-      const salt = Cripto.randomBytes(12);
+      const salt = Cripto.random_bytes(12);
       const encodedMethod = new TextEncoder().encode(method.toLowerCase());
       const encodedEndpoint = new TextEncoder().encode(this.normalizeEndpoint(endpoint));
       const payload = Bytes.merge([salt, encodedMethod, encodedEndpoint], 8);
