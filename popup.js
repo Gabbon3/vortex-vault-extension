@@ -61,7 +61,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById('fullsync-btn').addEventListener('click', async () => {
         if (!confirm('Are you sure you want to fully synchronize with the server?')) return;
         vaultInfo.innerHTML = "Downloading all data from your vault...";
-        if (await VaultService.syncronize(false)) {
+        if (await VaultService.syncronize(true)) {
             setTimeout(() => {
                 vaultInfo.innerHTML = "Vault is up to date";
             }, 2000);
