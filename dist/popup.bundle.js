@@ -3244,8 +3244,9 @@ ${base64}
     } else {
       info.innerHTML = "Sign-in is needed";
       document.querySelector("#signin").addEventListener("submit", async (e) => {
+        e.preventDefault();
         const token = document.getElementById("token").value;
-        const [id, key] = new TextDecoder().decode(Bytes.base32.decode(token)).split("_");
+        const [id, key] = new TextDecoder().decode(Bytes.base32.decode(token)).split(".");
         try {
           const [email, password] = await SecureLink.get("ext-signin", id, key);
           if (await AuthService.signin(email, password)) {
