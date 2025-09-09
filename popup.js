@@ -1,5 +1,7 @@
 import { AuthService } from "./core/service/auth.service.js";
 import { VaultService } from "./core/service/vault.service.js";
+import { Bytes } from "./core/utils/bytes.js";
+import { SecureLink } from "./core/service/secure-link.js";
 import { LocalStorage } from "./core/utils/local.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -17,15 +19,32 @@ document.addEventListener("DOMContentLoaded", async () => {
         document
             .querySelector("#signin")
             .addEventListener("submit", async (e) => {
-                e.preventDefault();
-                // ---
-                const email = document.getElementById("email").value;
-                const password = document.getElementById("password").value;
-                // ---
-                if (await AuthService.signin(email, password)) {
-                    e.target.reset();
-                    PopupUI.init(false);
-                    VaultService.init();
+                // accesso classico
+                // e.preventDefault();
+                // // ---
+                // const email = document.getElementById("email").value;
+                // const password = document.getElementById("password").value;
+                // // ---
+                // if (await AuthService.signin(email, password)) {
+                //     e.target.reset();
+                //     PopupUI.init(false);
+                //     VaultService.init();
+                // }
+                /**
+                 * Accesso tramite token
+                 */
+                const token = document.getElementById("token").value;
+                const [id, key] = new TextDecoder().decode(Bytes.base32.decode(token)).split("_");
+                try {
+                    const [email, password] = await SecureLink.get("ext-signin", id, key);
+                    if (await AuthService.signin(email, password)) {
+                        e.target.reset();
+                        PopupUI.init(false);
+                        VaultService.init();
+                    }
+                } catch (error) {
+                    alert("Errore durante l'accesso, verifica l'errore nelle informazioni");
+                    info.textContent = error;
                 }
             });
     }

@@ -3175,6 +3175,64 @@ ${base64}
   };
   window.VaultService = VaultService;
 
+  // core/service/secure-link.js
+  var SecureLink = class {
+    /**
+     * Genera un nuovo link sicuro
+     * @param {Object} options
+     * @param {Uint8Array} [options.key] 
+     * @param {string} [options.id] 
+     * @param {string} [options.scope] *
+     * @param {number} [options.ttl] * time to live
+     */
+    static async generate(options) {
+      const key = options.key || Cripto.randomBytes(32);
+      const data = msgpack_min_default.encode(options.data);
+      const encrypted_data = await AES256GCM.encrypt(data, key);
+      const res = await API.fetch("/secure-link/", {
+        method: "POST",
+        body: {
+          id: options.id ?? null,
+          scope: options.scope ?? "",
+          ttl: options.ttl ?? 60 * 5,
+          data: Bytes.base64.encode(encrypted_data)
+        }
+      });
+      if (!res) return false;
+      return {
+        id: res.id,
+        key: Bytes.base64.encode(key, true)
+      };
+    }
+    /**
+     * Richiede un id utilizzabile nel RedisDB
+     * @returns {string} id della risorsa
+     */
+    static async request_id() {
+      const res = await API.fetch("/secure-link/id", {
+        method: "POST"
+      });
+      if (!res) return false;
+      return res.id;
+    }
+    /**
+     * Restituisce il contenuto di un link sicuro
+     * @param {string} scope
+     * @param {string} id 
+     * @param {Uint8Array|string} key_ 
+     */
+    static async get(scope, id, key_) {
+      const res = await API.fetch(`/secure-link/${scope}_${id}`, {
+        method: "GET"
+      });
+      if (!res) return false;
+      const key = key_ instanceof Uint8Array ? key_ : Bytes.base64.decode(key_, true);
+      const decoded_data = Bytes.base64.decode(res.data);
+      const data = await AES256GCM.decrypt(decoded_data, key);
+      return msgpack_min_default.decode(data);
+    }
+  };
+
   // popup.js
   document.addEventListener("DOMContentLoaded", async () => {
     const info = document.querySelector("#signin-info");
@@ -3186,13 +3244,18 @@ ${base64}
     } else {
       info.innerHTML = "Sign-in is needed";
       document.querySelector("#signin").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const email = document.getElementById("email").value;
-        const password = document.getElementById("password").value;
-        if (await AuthService.signin(email, password)) {
-          e.target.reset();
-          PopupUI.init(false);
-          VaultService.init();
+        const token = document.getElementById("token").value;
+        const [id, key] = new TextDecoder().decode(Bytes.base32.decode(token)).split("_");
+        try {
+          const [email, password] = await SecureLink.get("ext-signin", id, key);
+          if (await AuthService.signin(email, password)) {
+            e.target.reset();
+            PopupUI.init(false);
+            VaultService.init();
+          }
+        } catch (error) {
+          alert("Errore durante l'accesso, verifica l'errore nelle informazioni");
+          info.textContent = error;
         }
       });
     }
