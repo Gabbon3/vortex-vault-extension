@@ -563,12 +563,12 @@ class ContentService {
          * se ci sono 0 risultati
          */
         if (vaultEntries === false) {
-            this.vaultSelector.innerHTML = "<span style='padding: 5px'>Vault is not ready, please open extension popup.</span>";
+            this.vaultSelector.innerHTML = "<span style='padding: 5px'>Il Vault non è pronto, avvia prima l'estensione.</span>";
             return;
         }
         else if (vaultEntries.length === 0) {
             this.vaultSelector.innerHTML =
-                "<span style='padding: 5px'>No vaults matched this query</span>";
+                "<span style='padding: 5px'>Nessun vault coincide con questa ricerca.</span>";
             return;
         }
         /**

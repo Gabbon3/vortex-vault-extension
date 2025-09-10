@@ -1051,10 +1051,10 @@ ${base64}
     showVaultSelector(inputElement, vaultEntries, totpOnly = false) {
       this.attachVaultSelectorTo(inputElement);
       if (vaultEntries === false) {
-        this.vaultSelector.innerHTML = "<span style='padding: 5px'>Vault is not ready, please open extension popup.</span>";
+        this.vaultSelector.innerHTML = "<span style='padding: 5px'>Il Vault non è pronto, avvia prima l'estensione.</span>";
         return;
       } else if (vaultEntries.length === 0) {
-        this.vaultSelector.innerHTML = "<span style='padding: 5px'>No vaults matched this query</span>";
+        this.vaultSelector.innerHTML = "<span style='padding: 5px'>Nessun vault coincide con questa ricerca.</span>";
         return;
       }
       this.vaultSelector.innerHTML = "";
