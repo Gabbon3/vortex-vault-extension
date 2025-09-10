@@ -825,8 +825,8 @@ ${base64}
      * @returns
      */
     async handleKeyDown(event) {
-      let totpOnly = event.ctrlKey && event.key === "\xF9" && event.altKey;
-      const toggleSearch = event.ctrlKey && event.key === "\xF9";
+      let totpOnly = event.ctrlKey && event.key === "ù" && event.altKey;
+      const toggleSearch = event.ctrlKey && event.key === "ù";
       if (totpOnly || toggleSearch) {
         event.preventDefault();
         this.searchActive = !this.searchActive;
@@ -953,7 +953,6 @@ ${base64}
         this.smartFillInput(passwordInput, vault.secrets.P);
         this.searchActive = false;
       } else {
-        navigator.clipboard.writeText(vault.secrets.P);
       }
       this.closeVaultSelector();
     }
@@ -961,16 +960,25 @@ ${base64}
      * Restituisce il primo elemento più vicino rispetto ad un altro
      * @param {Array<HTMLElement>} inputList 
      * @param {HTMLElement} target 
-     * @param {number} targetDistance 
-     * @returns {HTMLElement}
+     * @param {number} maxDistance distanza massima considerata in px (default 150)
+     * @returns {HTMLElement|null}
      */
-    findNearest(inputList, target = this.targetInput, targetDistance = 150) {
-      return inputList.find((input) => {
-        const rect1 = target.getBoundingClientRect();
-        const rect2 = input.getBoundingClientRect();
-        const distance = Math.abs(rect1.top - rect2.top);
-        return distance < targetDistance;
+    findNearest(inputList, target = this.targetInput, maxDistance = 150) {
+      if (!inputList.length || !target) return null;
+      let nearest = null;
+      let minDistance = maxDistance;
+      const rectTarget = target.getBoundingClientRect();
+      inputList.forEach((input) => {
+        const rect = input.getBoundingClientRect();
+        const dx = rect.left - rectTarget.left;
+        const dy = rect.top - rectTarget.top;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < minDistance) {
+          nearest = input;
+          minDistance = distance;
+        }
       });
+      return nearest;
     }
     /**
      * Tenta di fillare un input, tenendo conto di React o altre cazzate da web moderno
@@ -979,6 +987,7 @@ ${base64}
      */
     smartFillInput(input, value) {
       if (!input) return;
+      if (!this.isVisible(input)) return alert("Attenzione stai tentando di compilare dei campi non visibili, procedi con cautela");
       const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
         "value"
@@ -1097,6 +1106,27 @@ ${base64}
         ${!!vault.secrets.O ? '<button class="vve-totp" title="Insert TOTP code">TOTP</button>' : ""}`;
       div._vaultData = vault;
       return div;
+    }
+    /**
+     * Verifica se un input è effettivamente visibile e quindi sicuro da compilare
+     * @param {HTMLElement} el elemento html
+     * @returns {boolean} true se è visibile
+     */
+    isVisible(el) {
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+        return false;
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        return false;
+      }
+      const inViewport = rect.bottom > 0 && rect.right > 0 && rect.top < (window.innerHeight || document.documentElement.clientHeight) && rect.left < (window.innerWidth || document.documentElement.clientWidth);
+      if (!inViewport) {
+        return false;
+      }
+      return true;
     }
   };
   console.log("Vault Content Script Enabled");

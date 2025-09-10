@@ -6,7 +6,7 @@ import { LocalStorage } from "./core/utils/local.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
     const info = document.querySelector('#signin-info');
-    info.innerHTML = 'SHIV is starting...';
+    info.innerHTML = 'Avvio in corso dell\'estensione...';
     const sessionInitialized = await AuthService.init();
     if (sessionInitialized) {
         PopupUI.init(false);

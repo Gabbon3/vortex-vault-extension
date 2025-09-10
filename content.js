@@ -437,8 +437,9 @@ class ContentService {
             this.smartFillInput(passwordInput, vault.secrets.P);
             this.searchActive = false;
         } else {
-            // sei stronzo a tuono -> copio la password
-            navigator.clipboard.writeText(vault.secrets.P);
+            // rimosso per evitare clipboard scraping
+            // sei stronzo a tuono
+            // navigator.clipboard.writeText(vault.secrets.P);
             // alert("Not able to auto fill, password copied to clipboard");
         }
 
@@ -450,16 +451,32 @@ class ContentService {
      * Restituisce il primo elemento più vicino rispetto ad un altro
      * @param {Array<HTMLElement>} inputList 
      * @param {HTMLElement} target 
-     * @param {number} targetDistance 
-     * @returns {HTMLElement}
+     * @param {number} maxDistance distanza massima considerata in px (default 150)
+     * @returns {HTMLElement|null}
      */
-    findNearest(inputList, target = this.targetInput, targetDistance = 150) {
-        return inputList.find((input) => {
-            const rect1 = target.getBoundingClientRect();
-            const rect2 = input.getBoundingClientRect();
-            const distance = Math.abs(rect1.top - rect2.top);
-            return distance < targetDistance;
+    findNearest(inputList, target = this.targetInput, maxDistance = 150) {
+        if (!inputList.length || !target) return null;
+
+        let nearest = null;
+        let minDistance = maxDistance;
+
+        const rectTarget = target.getBoundingClientRect();
+
+        inputList.forEach(input => {
+            const rect = input.getBoundingClientRect();
+
+            // -- distanza euclidea approssimata solo su X e Y √[(x₂ - x₁)² + (y₂ - y₁)²]
+            const dx = rect.left - rectTarget.left;
+            const dy = rect.top - rectTarget.top;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < minDistance) {
+                nearest = input;
+                minDistance = distance;
+            }
         });
+
+        return nearest;
     }
 
     /**
@@ -469,6 +486,8 @@ class ContentService {
      */
     smartFillInput(input, value) {
         if (!input) return;
+        // -- verifico se l'input è visibile
+        if (!this.isVisible(input)) return alert("Attenzione stai tentando di compilare dei campi non visibili, procedi con cautela");
         // ---
         const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
             window.HTMLInputElement.prototype,
@@ -569,8 +588,8 @@ class ContentService {
         // -- aggiungo le informazioni al fondo per autocompilare
         const ctrlInfo = document.createElement('div');
         ctrlInfo.classList.add('vve-ctrl-info-cont');
-        ctrlInfo.innerHTML = 
-        `<span class="vve-ctrl-info" title="Auto-complete with active credentials">Ctrl + Enter</span><span class="vve-ctrl-info vve-mla" title="Insert TOTP of active credentials">Ctrl + Alt + Enter</span>`;
+        ctrlInfo.innerHTML =
+            `<span class="vve-ctrl-info" title="Auto-complete with active credentials">Ctrl + Enter</span><span class="vve-ctrl-info vve-mla" title="Insert TOTP of active credentials">Ctrl + Alt + Enter</span>`;
         this.vaultSelector.appendChild(ctrlInfo);
     }
     /**
@@ -605,15 +624,45 @@ class ContentService {
     renderVaultEntry(vault) {
         const div = document.createElement("div");
         div.className = "vault-entry";
-        div.innerHTML = 
-       `<div class="vve-info"><strong>${vault.secrets.T ?? "No title"}</strong>
+        div.innerHTML =
+            `<div class="vve-info"><strong>${vault.secrets.T ?? "No title"}</strong>
         <span>${vault.secrets.U ?? "no username"}</span></div>
         ${!!vault.secrets.O
-          ? '<button class="vve-totp" title="Insert TOTP code">TOTP</button>'
-          : ""
-        }`;
+                ? '<button class="vve-totp" title="Insert TOTP code">TOTP</button>'
+                : ""
+            }`;
         div._vaultData = vault;
         return div;
+    }
+    /**
+     * Verifica se un input è effettivamente visibile e quindi sicuro da compilare
+     * @param {HTMLElement} el elemento html
+     * @returns {boolean} true se è visibile
+     */
+    isVisible(el) {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        // -- controllo il css
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+            return false;
+        }
+        const rect = el.getBoundingClientRect();
+        // --- deve avere delle dimensioni
+        if (rect.width === 0 || rect.height === 0) {
+            return false;
+        }
+        // -- deve essere visibile all'interno del viewport
+        const inViewport = (
+            rect.bottom > 0 &&
+            rect.right > 0 &&
+            rect.top < (window.innerHeight || document.documentElement.clientHeight) &&
+            rect.left < (window.innerWidth || document.documentElement.clientWidth)
+        );
+        if (!inViewport) {
+            return false;
+        }
+        // --  se passa tutto tecnicamente è un input valido
+        return true;
     }
 }
 
