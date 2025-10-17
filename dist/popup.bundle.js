@@ -2366,7 +2366,7 @@ ${base64}
 
   // lib/config.js
   var Config = class {
-    static dev = true;
+    static dev = false;
     // ---
     static origin = this.dev ? "http://localhost:3000" : "https://vortexvault.fly.dev";
   };
