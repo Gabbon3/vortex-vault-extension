@@ -1,8 +1,41 @@
 import { Config } from "../../lib/config.js";
-import { SHIV } from "../secure/SHIV.browser.js";
+import { SessionStorage } from "./session.js";
+import { PoP } from "../secure/PoP.js";
 
 export class API {
     static recent = {};
+    // counter usato per la Chain
+    static counter = 1;
+    static initialized = false;
+    /**
+     * Inizializzo l'API, recuperando il counter dalla sessione
+     */
+    static init() {
+        if (API.initialized) return;
+        API.initialized = true;
+        API.counter = SessionStorage.get('api-counter') || 1;
+    }
+    /**
+     * Wrapper per fetch che controlla e rinnova l'access token se scaduto
+     * @param {string} endpoint 
+     * @param {{}} options 
+     * @param {string} type 
+     * @returns 
+     */
+    static async fetch(endpoint, options = {}, type = {}) {
+        // controllo che l'access token non sia scaduto
+        const accessTokenExpiry = SessionStorage.get('access-token-expiry');
+        if (accessTokenExpiry && new Date() > new Date(accessTokenExpiry) && !options.skipRefresh) {
+            const refreshed = await PoP.refreshAccessToken();
+            if (!refreshed) {
+                // -- non sono riuscito a rigenerare il token
+                alert("Sessione scaduta, effettua nuovamente l'accesso");
+                window.location.reload();
+                return null;
+            }
+        }
+        return await API.call(endpoint, options, type);
+    }
     /**
      * Eseguo una richiesta fetch centralizzata con endpoint, opzioni e tipo di dato.
      * @param {string} endpoint - L'endpoint a cui fare la richiesta.
@@ -13,7 +46,7 @@ export class API {
      * @param {Object} type - Contiene i tipi di ritorno e contenuto: { return_type, content_type }. (json, form-data, bin)
      * @returns {Promise<any|null>} - Restituisco il risultato della chiamata o null in caso di errore.
      */
-    static async fetch(endpoint, options = {}, type = {}) {
+    static async call(endpoint, options = {}, type = {}) {
         try {
             // -- imposto le intestazioni e il tipo di contenuto per la richiesta
             options.headers = options.headers || {};
@@ -26,11 +59,9 @@ export class API {
                 options.headers['x-authentication-method'] = options.auth;
                 delete options.auth;
             }
-            // -- aggiungo l'header integrity se presente
-            const integrity = await SHIV.getIntegrity(options.method, endpoint);
-            if (integrity) {
-                options.headers['X-Integrity'] = integrity;
-            }
+            // -- aggiungo l'header del counter per la chain
+            options.headers['x-counter'] = API.counter++;
+            SessionStorage.set('api-counter', API.counter);
             // IMPORTANTE: aggiungere queryParams DOPO la firma, per evitare mismatch di endpoint
             // -- gestisco i query Params
             if (options.queryParams) {

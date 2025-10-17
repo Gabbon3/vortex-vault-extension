@@ -3,8 +3,7 @@ import { Cripto } from "../secure/cripto.js";
 import { SessionStorage } from "../utils/session.js";
 import { LocalStorage } from "../utils/local.js";
 import { API } from "../utils/api.js";
-import { CKE } from "../utils/cke.public.util.js";
-import { SHIV } from "../secure/SHIV.browser.js";
+import { PoP } from "../secure/PoP.js";
 import { AES256GCM } from "../secure/aesgcm.js";
 
 export class AuthService {
@@ -12,25 +11,9 @@ export class AuthService {
      * Inizializza la sessione calcolando la shared key
      */
     static async init() {
-        /**
-         * CKE
-         */
-        const sessionSharedSecret = SessionStorage.get("shared-secret");
-        if (sessionSharedSecret) {
-            console.log('Session already ok');
-            return true;
-        }
-        // ---
-        const keyBasic = await CKE.getBasic();
-        if (!keyBasic) return false;
-        // ---
-        const sharedSecret = await LocalStorage.get("shared-secret", keyBasic);
-        if (!sharedSecret) return false;
-        // ---
-        SessionStorage.set("shared-secret", sharedSecret);
-        console.log("SHIV started");
-        // ---
-        return this.startSession();
+        const popInitialized = await PoP.init();
+        const authInitialized = await this.startSessionWithPoP();
+        return popInitialized && authInitialized;
     }
     /**
      * Tenta di avviare automaticamente una sessione
@@ -81,52 +64,43 @@ export class AuthService {
      * Esegue l'accesso
      * @param {string} email
      * @param {string} password
-     * @param {boolean} [activate_lse=false] true per abilitare il protocollo lse
      * @returns {boolean}
      */
     static async signin(email, password) {
         // -- genero la coppia di chiavi
-        const publicKeyHex = await SHIV.generateKeyPair();
+        const publicKeyB64 = await PoP.generateKeyPair();
         const obfuscatedPassword = await Cripto.obfuscatePassword(password);
         // ---
-        const res = await API.fetch('/auth/signin', {
-            method: 'POST',
+        const res = await API.fetch("/auth/signin", {
+            method: "POST",
             body: {
                 email,
                 password: obfuscatedPassword,
-                publicKey: publicKeyHex,
+                publicKey: publicKeyB64,
             },
+            skipRefresh: true,
         });
         if (!res) return false;
         // ---
-        const { dek: encodedDek, publicKey: serverPublicKey, bypassToken } = res;
-        // -- ottengo il segreto condiviso e lo cifro in localstorage con CKE
-        const sharedSecret = await SHIV.completeHandshake(serverPublicKey);
-        if (!sharedSecret) return false;
-        /**
-         * Inizializzo CKE localmente
-         */
-        const { keyBasic, keyAdvanced } = await CKE.set(bypassToken);
-        if (!keyBasic || !keyAdvanced) return false;
-        // -- cifro localmente lo shared secret con la chiave basic
-        LocalStorage.set('shared-secret', sharedSecret, keyBasic);
+        const { dek: encodedDek } = res;
         // -- derivo la chiave crittografica
         const salt = Bytes.hex.decode(res.salt);
-        const KEK = await Cripto.deriveKey(password, salt);
+        // ---
+        const rawKEK = await Cripto.deriveKey(password, salt);
+        const KEK = await AES256GCM.importAesGcmKey(rawKEK, false);
         // ---
         const encryptedDEK = Bytes.base64.decode(encodedDek);
-        const DEK = await AES256GCM.decrypt(encryptedDEK, KEK);
-        // -- cifro le credenziali sul localstorage
-        await LocalStorage.set('email-utente', email);
-        await LocalStorage.set('password-utente', password, KEK);
-        await LocalStorage.set('master-key', KEK, keyBasic);
-        await LocalStorage.set('DEK', DEK, keyBasic);
-        await LocalStorage.set('salt', salt, keyBasic);
-        // -- imposto quelle in chiaro sul session storage
-        SessionStorage.set('master-key', KEK);
-        SessionStorage.set('DEK', DEK);
-        SessionStorage.set('salt', salt);
-        SessionStorage.set('uid', res.uid);
+        const rawDEK = await AES256GCM.decrypt(encryptedDEK, KEK);
+        const DEK = await AES256GCM.importAesGcmKey(rawDEK, false);
+        // -- imposto in chiaro sul session storage
+        SessionStorage.set(
+            "access-token-expiry",
+            new Date(Date.now() + 15 * 60 * 1000)
+        );
+        LocalStorage.set("salt", salt);
+        LocalStorage.set("email", email);
+        await VaultService.keyStore.saveKey(KEK, "KEK");
+        await VaultService.keyStore.saveKey(DEK, "DEK");
         // ---
         return true;
     }
@@ -135,14 +109,29 @@ export class AuthService {
      * Effettua il logout eliminando ogni traccia dell'utente dal client
      */
     static async signout() {
-        const res = await API.fetch('/auth/signout', {
-            method: 'POST',
+        const res = await API.fetch("/auth/signout", {
+            method: "POST",
         });
         if (!res) return false;
         // ---
         localStorage.clear();
         sessionStorage.clear();
-        await chrome.storage.session.clear();
+        return true;
+    }
+
+    /**
+     * Refresha l'access token in automatico usando la chiave privata pop
+     * @returns {boolean} true è stato loggato e la sessione è stata attivata, 0 già loggato, -1 nuovo access token non ottenuto, -2 nessuna chiave restituita, false sessione non attivata
+     */
+    static async startSessionWithPoP() {
+        const accessTokenExpiry = SessionStorage.get("access-token-expiry");
+        if (accessTokenExpiry) return true;
+        // ---
+        const accessTokenRefreshed = await PoP.refreshAccessToken();
+        if (!accessTokenRefreshed) return false;
+        // -- imposto le variabili di sessione
+        SessionStorage.set("email", await LocalStorage.get("email"));
+        SessionStorage.set("salt", await LocalStorage.get("salt"));
         return true;
     }
 }

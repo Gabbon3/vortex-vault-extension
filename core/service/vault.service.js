@@ -4,8 +4,10 @@ import msgpack from "../utils/msgpack.min.js";
 import { API } from "../utils/api.js";
 import { LocalStorage } from "../utils/local.js";
 import { VaultLocal } from "./vault.local.js";
+import { KeyStore } from "../secure/keystore.js";
 
 export class VaultService {
+    static keyStore = new KeyStore('VaultKeys');
     // POPUP VAR
     static info = null;
     // -----
@@ -41,13 +43,13 @@ export class VaultService {
      * @returns {boolean} - true se entrambi sono presenti
      */
     static async configSecrets() {
-        // -- ottengo la scadenza dell'access token
-        const ckeKeyAdvanced = SessionStorage.get('cke-key-basic');
+        // -- verifico se la sessione è attiva
+        const accessTokenExpiry = SessionStorage.get("access-token-expiry");
         // - se scaduto restituisco false cosi verrà rigenerata la sessione
-        if (ckeKeyAdvanced === null) return false;
-        this.KEK = await LocalStorage.get("master-key", ckeKeyAdvanced);
-        this.DEK = await LocalStorage.get("DEK", ckeKeyAdvanced);
-        this.salt = await LocalStorage.get("salt", ckeKeyAdvanced);
+        if (accessTokenExpiry === null) return false;
+        this.KEK = await this.keyStore.loadKey("KEK");
+        this.DEK = await this.keyStore.loadKey("DEK");
+        this.salt = await LocalStorage.get("salt");
         return this.KEK && this.DEK && this.salt ? true : false;
     }
     /**
@@ -58,7 +60,7 @@ export class VaultService {
     static async syncronize(full = false) {
         const configured = await this.configSecrets();
         if (!configured)
-            return alert(2, "Any Crypto Key founded");
+            return alert("Nessuna chiave crittografica trovata, effettua il login.");
         const vault_update = (await LocalStorage.get("vault-update")) ?? null;
         let selectFrom = null;
         /**

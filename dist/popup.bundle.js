@@ -2223,17 +2223,31 @@ ${base64}
       );
     }
     /**
+     * Importa e restituisce una CryptoKey partendo da 32 byte
+     * @param {Uint8Array} raw 
+     * @param {boolean} [exportable=false] 
+     * @param {number} [version=1]
+     * @returns {CryptoKey}
+     */
+    static async importAesGcmKey(raw, exportable = false, version = 1) {
+      return await crypto.subtle.importKey(
+        "raw",
+        raw,
+        { name: this.versionMap[version].algorithm },
+        exportable,
+        ["encrypt", "decrypt"]
+      );
+    }
+    /**
      * Cifra i dati utilizzando AES-256-GCM.
-     *
      * @param {Uint8Array} data - I dati da cifrare.
-     * @param {Uint8Array|CryptoKey} keyBuffer - La chiave di cifratura (32 byte per AES-256).
+     * @param {CryptoKey} key - La chiave di cifratura (32 byte per AES-256).
      * @param {*|Uint8Array} [aad=null] - informazioni aggiuntive da includere per l'autenticazione
      * @param {number} [version=1] - indica con quale versione i dati sono cifrati
      * @returns {Promise<Uint8Array>} - I dati cifrati concatenati con il nonce e il tag di autenticazione.
      */
-    static async encrypt(data, keyBuffer, aad = null, version = 1) {
+    static async encrypt(data, key, aad = null, version = 1) {
       const nonce = crypto.getRandomValues(new Uint8Array(this.versionMap[version].nonceLength));
-      const key = await this.resolveKey(keyBuffer);
       const options = {
         name: this.versionMap[version].algorithm,
         iv: nonce,
@@ -2251,17 +2265,15 @@ ${base64}
     }
     /**
      * Decifra i dati con AES-256-GCM.
-     *
      * @param {Uint8Array} encrypted - I dati cifrati concatenati (nonce + dati cifrati + tag).
-     * @param {Uint8Array} keyBuffer - La chiave di decifratura (32 byte per AES-256).
+     * @param {CryptoKey} key - La chiave di decifratura (32 byte per AES-256).
      * @param {*|Uint8Array} [aad=null] - informazioni aggiuntive da includere per l'autenticazione
      * @returns {Promise<Uint8Array>} - I dati decifrati.
      */
-    static async decrypt(encrypted, keyBuffer, aad = null) {
+    static async decrypt(encrypted, key, aad = null) {
       const version = encrypted[0];
       const nonce = encrypted.slice(1, 1 + this.versionMap[version].nonceLength);
       const encryptedData = encrypted.slice(1 + this.versionMap[version].nonceLength);
-      const key = await this.resolveKey(keyBuffer);
       const options = {
         name: this.versionMap[version].algorithm,
         iv: nonce,
@@ -2290,6 +2302,7 @@ ${base64}
       return data ? data instanceof Uint8Array ? data : msgpack_min_default.encode(data) : null;
     }
   };
+  window.AES256GCM = AES256GCM;
 
   // core/utils/local.js
   var LocalStorage = class _LocalStorage {
@@ -2353,199 +2366,402 @@ ${base64}
 
   // lib/config.js
   var Config = class {
-    static dev = false;
+    static dev = true;
     // ---
-    static origin = this.dev ? "http://localhost:3000" : "https://vortexvault.org";
+    static origin = this.dev ? "http://localhost:3000" : "https://vortexvault.fly.dev";
   };
 
-  // core/secure/ecdh.js
-  var ECDH = class {
+  // core/secure/ecdsa.js
+  var ECDSA = class _ECDSA {
+    static algorithm = {
+      name: "ECDSA",
+      namedCurve: "P-256"
+    };
+    static signAlgorithm = {
+      name: "ECDSA",
+      hash: { name: "SHA-256" }
+    };
     /**
-     * Genera una coppia di chiavi pubblica e privata ECDH.
-     * Restituisce ogni chiave sia in formato utilizzabile CryptoKey, sia in formato grezzo Uint8Array.
-     * @param {string} [curve='P-256'] di default quella piu comune ma puo anche essere 'P-384' o 'P-521'
-     * @returns {Promise<{public_key: [CryptoKey, Uint8Array], private_key: [CryptoKey, Uint8Array]}>} La chiave pubblica in formato Uint8Array e la chiave privata in formato CryptoKey.
+     * Genera una coppia di chiavi ECDSA
+     * @param {boolean} [exportable=true] - Se true, le chiavi saranno esportabili
+     * @returns {Promise<{publicKey: CryptoKey, privateKey: CryptoKey}>}
      */
-    static async generate_keys(curve = "P-256") {
-      const key_pair = await self.self.crypto.subtle.generateKey(
-        {
-          name: "ECDH",
-          namedCurve: curve
-        },
-        true,
-        // - la chiave è esportabile
-        ["deriveKey", "deriveBits"]
-      );
-      const exported_public_key = await self.self.crypto.subtle.exportKey("raw", key_pair.publicKey);
-      const exported_private_key = await self.self.crypto.subtle.exportKey("pkcs8", key_pair.privateKey);
-      return {
-        public_key: [key_pair.publicKey, new Uint8Array(exported_public_key)],
-        private_key: [key_pair.privateKey, new Uint8Array(exported_private_key)]
-      };
+    static async generateKeys(exportable = true) {
+      try {
+        const keyPair = await crypto.subtle.generateKey(
+          {
+            name: _ECDSA.algorithm.name,
+            namedCurve: _ECDSA.algorithm.namedCurve
+          },
+          exportable,
+          ["sign", "verify"]
+          // key usages
+        );
+        return {
+          publicKey: keyPair.publicKey,
+          privateKey: keyPair.privateKey
+        };
+      } catch (error) {
+        throw new Error(`Errore nella generazione delle chiavi: ${error.message}`);
+      }
     }
     /**
-     * Importa una chiave pubblica ECDH da un array di byte in formato RAW.
-     * @param {Uint8Array} public_key - La chiave pubblica in formato grezzo Uint8Array.
-     * @param {string} [curve='P-256'] 
-     * @returns {Promise<CryptoKey>} La chiave pubblica importata come CryptoKey.
+     * Firma un messaggio con la chiave privata
+     * @param {CryptoKey} privateKey - Chiave privata per firmare
+     * @param {ArrayBuffer} message - Messaggio da firmare
+     * @returns {Promise<ArrayBuffer>} Firma in formato raw
      */
-    static async import_public_key(public_key, curve = "P-256") {
-      return await self.self.crypto.subtle.importKey(
-        "raw",
-        // - formato della chiave
-        public_key,
-        // - la chiave pubblica in formato Uint8Array
-        {
-          name: "ECDH",
-          namedCurve: curve
-          // - la curva deve essere la stessa
-        },
-        true,
-        // - la chiave è esportabile
-        []
-      );
+    static async sign(privateKey, message) {
+      try {
+        const signature = await crypto.subtle.sign(
+          {
+            name: _ECDSA.algorithm.name,
+            hash: { name: _ECDSA.signAlgorithm.hash.name }
+          },
+          privateKey,
+          message
+        );
+        return signature;
+      } catch (error) {
+        throw new Error(`Errore nella firma: ${error.message}`);
+      }
     }
     /**
-     * Converte una chiave privata in formato Uint8Array in un CryptoKey per uso con ECDH.
-     * @param {Uint8Array} private_key_bytes - La chiave privata in formato Uint8Array.
-     * @param {string} [curve='P-256'] 
-     * @returns {Promise<CryptoKey>} La chiave privata importata come CryptoKey.
+     * Verifica una firma con la chiave pubblica
+     * @param {CryptoKey} publicKey - Chiave pubblica per verificare
+     * @param {ArrayBuffer} signature - Firma da verificare
+     * @param {ArrayBuffer} message - Messaggio originale
+     * @returns {Promise<boolean>} True se la firma è valida
      */
-    static async import_private_key(private_key_bytes, curve = "P-256") {
-      return self.self.crypto.subtle.importKey(
-        "pkcs8",
-        // - il formato
-        private_key_bytes,
-        // - chiave privata come Uint8Array
-        {
-          name: "ECDH",
-          namedCurve: curve
-        },
-        true,
-        // - la chiave è esportabile
-        ["deriveKey", "deriveBits"]
-      );
+    static async verify(publicKey, signature, message) {
+      try {
+        const isValid = await crypto.subtle.verify(
+          {
+            name: _ECDSA.algorithm.name,
+            hash: { name: _ECDSA.signAlgorithm.hash.name }
+          },
+          publicKey,
+          signature,
+          message
+        );
+        return isValid;
+      } catch (error) {
+        throw new Error(`Errore nella verifica: ${error.message}`);
+      }
     }
     /**
-     * Deriva una chiave condivisa utilizzando una chiave privata e una chiave pubblica.
-     * @param {CryptoKey} private_key - La chiave privata in formato CryptoKey.
-     * @param {CryptoKey} public_key - La chiave pubblica in formato CryptoKey.
-     * @returns {Promise<Uint8Array>} La chiave condivisa derivata come Uint8Array.
+     * Esporta una chiave pubblica in formato raw
+     * @param {CryptoKey} publicKey - Chiave pubblica da esportare
+     * @returns {Promise<ArrayBuffer>} Chiave pubblica in formato raw
      */
-    static async derive_shared_secret(private_key, public_key) {
-      const shared_secret = await self.self.crypto.subtle.deriveBits(
-        {
-          name: "ECDH",
-          public: public_key
-        },
-        private_key,
-        256
-        // - dimensione della chiave risultante (può essere 256, 384, 521)
-      );
-      return new Uint8Array(shared_secret);
+    static async exportPublicKeyRaw(publicKey) {
+      try {
+        const rawKey = await crypto.subtle.exportKey(
+          "raw",
+          publicKey
+        );
+        return rawKey;
+      } catch (error) {
+        throw new Error(`Errore nell'esportazione della chiave pubblica: ${error.message}`);
+      }
     }
     /**
-     * Esporta una chiave privata in formato PKCS#8.
-     * @param {CryptoKey} private_key - La chiave privata in formato CryptoKey.
-     * @returns {Promise<Uint8Array>} La chiave privata esportata come Uint8Array.
+     * Esporta una chiave privata in formato raw
+     * @param {CryptoKey} privateKey - Chiave privata da esportare
+     * @returns {Promise<ArrayBuffer>} Chiave privata in formato raw
      */
-    static async export_private_key(private_key) {
-      const exported_private_key = await self.self.crypto.subtle.exportKey("pkcs8", private_key);
-      return new Uint8Array(exported_private_key);
+    static async exportPrivateKeyRaw(privateKey) {
+      try {
+        const rawKey = await crypto.subtle.exportKey(
+          "pkcs8",
+          privateKey
+        );
+        return rawKey;
+      } catch (error) {
+        throw new Error(`Errore nell'esportazione della chiave privata: ${error.message}`);
+      }
+    }
+    /**
+     * Importa una chiave pubblica da formato raw
+     * @param {ArrayBuffer} rawPublicKey - Chiave pubblica in formato raw
+     * @param {boolean} [exportable=true] - Se true, la chiave sarà esportabile
+     * @returns {Promise<CryptoKey>} Chiave pubblica come CryptoKey
+     */
+    static async importPublicKeyRaw(rawPublicKey, exportable = true) {
+      try {
+        const publicKey = await crypto.subtle.importKey(
+          "raw",
+          rawPublicKey,
+          {
+            name: "ECDSA",
+            namedCurve: "P-256"
+          },
+          exportable,
+          ["verify"]
+        );
+        return publicKey;
+      } catch (error) {
+        throw new Error(`Errore nell'importazione della chiave pubblica: ${error.message}`);
+      }
+    }
+    /**
+     * Importa una chiave privata da formato PKCS8
+     * @param {ArrayBuffer} rawPrivateKey - Chiave privata in formato PKCS8
+     * @param {boolean} [exportable=true] - Se true, la chiave sarà esportabile
+     * @returns {Promise<CryptoKey>} Chiave privata come CryptoKey
+     */
+    static async importPrivateKeyRaw(rawPrivateKey, exportable = true) {
+      try {
+        const privateKey = await crypto.subtle.importKey(
+          "pkcs8",
+          rawPrivateKey,
+          {
+            name: "ECDSA",
+            namedCurve: "P-256"
+          },
+          exportable,
+          ["sign"]
+        );
+        return privateKey;
+      } catch (error) {
+        throw new Error(`Errore nell'importazione della chiave privata: ${error.message}`);
+      }
     }
   };
 
-  // core/secure/SHIV.browser.js
-  var SHIV = class _SHIV {
-    // usato per memorizzare la vecchia chiave
-    static recentKey = null;
-    // ---
-    static clientPrivateKey = null;
-    static clientPublicKey = null;
-    static clientPublicKeyHex = null;
-    // 
-    static timeWindow = 120;
-    /**
-     * Restituisce la stringa di integrità 
-     * da associare alle fetch come header
-     * @param {string} method - metodo usato per la fetch (GET, POST...)
-     * @param {string} endpoint - endpoint su cui verrà effettuata la fetch
-     * @returns {string} stringa esadecimale dell'integrità
-     */
-    static async getIntegrity(method = "", endpoint = "") {
-      const sharedSecret = SessionStorage.get("shared-secret");
-      if (sharedSecret instanceof Uint8Array == false) return null;
-      const salt = Cripto.random_bytes(12);
-      const encodedMethod = new TextEncoder().encode(method.toLowerCase());
-      const encodedEndpoint = new TextEncoder().encode(this.normalizeEndpoint(endpoint));
-      const payload = Bytes.merge([salt, encodedMethod, encodedEndpoint], 8);
-      const derivedKey = await this.deriveKey(sharedSecret, salt);
-      const encrypted = await Cripto.hmac(payload, derivedKey);
-      const result = Bytes.merge([salt, encrypted], 8);
-      return Bytes.base64.encode(result, true);
+  // core/secure/keystore.js
+  var KeyStore = class {
+    constructor(dbName = "KeyStore") {
+      this.dbName = dbName;
+      this.db = null;
     }
     /**
-     * Normalizza un path preparandolo alla firma di integrità
-     * rimuove slash finali e query params, forza lower case
-     * @param {string} path 
-     * @returns {string}
+     * Inizializza il database
+     * @returns {Promise<IDBDatabase>}
      */
-    static normalizeEndpoint(endpoint) {
-      return endpoint.split("?")[0].replace(/\/+$/, "").toLowerCase();
+    async init() {
+      if (this.db) return this.db;
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(this.dbName, 2);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (db.objectStoreNames.contains("keys")) {
+            db.deleteObjectStore("keys");
+          }
+          db.createObjectStore("keys", { keyPath: "name" });
+        };
+        request.onsuccess = (e) => {
+          this.db = e.target.result;
+          resolve(this.db);
+        };
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => {
+          console.warn("Aggiornamento IndexedDB bloccato. Chiudi altre schede che usano lo stesso DB.");
+        };
+      });
     }
     /**
-     * Genera e imposta le chiavi da usare per l'handshake con il server
-     * @returns {boolean}
+     * Salva una CryptoKey (sovrascrive se esiste già)
+     * @param {CryptoKey} key - Chiave da salvare
+     * @param {string} name - Nome identificativo (usato come chiave primaria)
+     * @returns {Promise<string>} Nome della chiave salvata
+     */
+    async saveKey(key, name) {
+      if (!(key instanceof CryptoKey)) {
+        throw new Error('Il parametro "key" deve essere una CryptoKey');
+      }
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const store = this.db.transaction(["keys"], "readwrite").objectStore("keys");
+        const keyData = {
+          name,
+          // Usato come chiave primaria
+          key,
+          timestamp: /* @__PURE__ */ new Date()
+        };
+        const request = store.put(keyData);
+        request.onsuccess = () => resolve(name);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    /**
+     * Carica una CryptoKey per nome
+     * @param {string} name - Nome della chiave
+     * @returns {Promise<CryptoKey|null>}
+     */
+    async loadKey(name) {
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const store = this.db.transaction(["keys"], "readonly").objectStore("keys");
+        const request = store.get(name);
+        request.onsuccess = () => resolve(request.result?.key || null);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    /**
+     * Elimina una chiave specifica per nome
+     * @param {string} name - Nome della chiave da eliminare
+     * @returns {Promise<boolean>} True se eliminata, false se non esisteva
+     */
+    async deleteKey(name) {
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const store = this.db.transaction(["keys"], "readwrite").objectStore("keys");
+        const request = store.delete(name);
+        request.onsuccess = () => resolve(true);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    /**
+     * Ottieni tutti i nomi delle chiavi salvate
+     * @returns {Promise<string[]>}
+     */
+    async listKeys() {
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const store = this.db.transaction(["keys"], "readonly").objectStore("keys");
+        const request = store.getAllKeys();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    /**
+     * Verifica se una chiave esiste
+     * @param {string} name - Nome della chiave
+     * @returns {Promise<boolean>}
+     */
+    async hasKey(name) {
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const store = this.db.transaction(["keys"], "readonly").objectStore("keys");
+        const request = store.getKey(name);
+        request.onsuccess = () => resolve(request.result !== void 0);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    /**
+     * Pulisce tutte le chiavi (come localStorage.clear())
+     * @returns {Promise<void>}
+     */
+    async clear() {
+      await this.init();
+      return new Promise((resolve, reject) => {
+        const store = this.db.transaction(["keys"], "readwrite").objectStore("keys");
+        const request = store.clear();
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    }
+  };
+
+  // core/secure/PoP.js
+  var PoP = class _PoP {
+    static keys = {};
+    static keyStore = new KeyStore("AuthKeys");
+    static dbPrivateKeyName = "PopPrivateKey";
+    /**
+     * Inizializzo PoP caricando la chiave privata dalla sessione o generandone una nuova
+     * @returns {Promise<boolean>}
+     */
+    static async init() {
+      const privateKey = await this.keyStore.loadKey(this.dbPrivateKeyName);
+      if (!privateKey) return false;
+      _PoP.keys.privateKey = privateKey;
+      return true;
+    }
+    /**
+     * Genera la coppia di chiavi ECDSA per il PoP
+     * @returns {Promise<string>} chiave pubblica in base64 urlsafe
      */
     static async generateKeyPair() {
-      const keyPair = await ECDH.generate_keys();
-      this.clientPrivateKey = keyPair.private_key[0];
-      this.clientPublicKey = keyPair.public_key[0];
-      this.clientPublicKeyHex = Bytes.hex.encode(keyPair.public_key[1]);
-      return this.clientPublicKeyHex;
-    }
-    /**
-     * Deriva il segreto condiviso con il server
-     * @param {string} serverPublicKeyHex in esadecimale
-     */
-    static async deriveSharedSecret(serverPublicKeyHex) {
-      const serverPublicKey = await ECDH.import_public_key(
-        Bytes.hex.decode(serverPublicKeyHex)
+      const keys = await ECDSA.generateKeys(true);
+      _PoP.keys.publicKey = keys.publicKey;
+      const privateKey = keys.privateKey;
+      const exportedPublicKey = await ECDSA.exportPublicKeyRaw(
+        _PoP.keys.publicKey
       );
-      const sharedSecret = await ECDH.derive_shared_secret(
-        this.clientPrivateKey,
-        serverPublicKey
+      const exportedPrivateKey = await ECDSA.exportPrivateKeyRaw(privateKey);
+      _PoP.keys.privateKey = await ECDSA.importPrivateKeyRaw(
+        exportedPrivateKey,
+        false
       );
-      return await Cripto.hash(sharedSecret);
+      await this.keyStore.saveKey(_PoP.keys.privateKey, this.dbPrivateKeyName);
+      return Bytes.base64.encode(new Uint8Array(exportedPublicKey), true);
     }
     /**
-     * Deriva la chiave sfruttando le finestre temporali
-     * @param {Uint8Array} sharedKey 
-     *@param {Uint8Array} salt - 
-     * @param {number} [interval=60] intervallo di tempo in secondi, di default a 1 ora
-     * @param {number} [shift=0] con 0 si intende l'intervallo corrente, con 1 il prossimo intervallo, con -1 il precedente
+     * Rigenera l'access token firmando un nonce
+     * @returns {Promise<boolean>} true se riuscito, false se fallito
      */
-    static async deriveKey(sharedKey, salt, interval = _SHIV.timeWindow, shift = 0) {
-      const int = Math.floor((Date.now() / 1e3 + shift * interval) / interval);
-      const windowIndex = new TextEncoder().encode(`${int}`);
-      return await Cripto.HKDF(sharedKey, salt, windowIndex);
+    static async refreshAccessToken() {
+      if (!this.keys.privateKey) return false;
+      const nonceRes = await API.call("/auth/nonce", { method: "GET" });
+      if (!nonceRes || !nonceRes.nonce) return null;
+      const nonceBuffer = Bytes.hex.decode(nonceRes.nonce).buffer;
+      const signedNonce = await ECDSA.sign(this.keys.privateKey, nonceBuffer);
+      const signedNonceHex = Bytes.hex.encode(new Uint8Array(signedNonce));
+      const refreshRes = await API.call("/auth/refresh", {
+        method: "POST",
+        body: { signedNonce: signedNonceHex, nonce: nonceRes.nonce }
+      });
+      if (!refreshRes) return false;
+      SessionStorage.set(
+        "access-token-expiry",
+        new Date(Date.now() + 15 * 60 * 1e3)
+      );
+      return true;
     }
     /**
-     * Completa l'handshake calcolando tutto il necessario in locale
-     * @param {string} serverPublicKeyHex 
-     * @returns {boolean | Uint8Array}
+     * Restituisce il payload di un JWT senza verificarlo
+     * @param {string} jwt
+     * @returns {Object|null}
      */
-    static async completeHandshake(serverPublicKeyHex) {
-      const sharedSecret = await this.deriveSharedSecret(serverPublicKeyHex);
-      if (!sharedSecret) return false;
-      SessionStorage.set("shared-secret", sharedSecret);
-      return sharedSecret;
+    static getPayload(jwt) {
+      try {
+        const [payloadB64] = jwt.split(".");
+        if (!payloadB64) return null;
+        const payloadBuffer = Bytes.base64.decode(payloadB64, true);
+        const payload = msgpack_min_default.decode(payloadBuffer);
+        return payload;
+      } catch (error) {
+        return false;
+      }
     }
   };
+  window.PoP = PoP;
 
   // core/utils/api.js
   var API = class _API {
     static recent = {};
+    // counter usato per la Chain
+    static counter = 1;
+    static initialized = false;
+    /**
+     * Inizializzo l'API, recuperando il counter dalla sessione
+     */
+    static init() {
+      if (_API.initialized) return;
+      _API.initialized = true;
+      _API.counter = SessionStorage.get("api-counter") || 1;
+    }
+    /**
+     * Wrapper per fetch che controlla e rinnova l'access token se scaduto
+     * @param {string} endpoint 
+     * @param {{}} options 
+     * @param {string} type 
+     * @returns 
+     */
+    static async fetch(endpoint, options = {}, type = {}) {
+      const accessTokenExpiry = SessionStorage.get("access-token-expiry");
+      if (accessTokenExpiry && /* @__PURE__ */ new Date() > new Date(accessTokenExpiry) && !options.skipRefresh) {
+        const refreshed = await PoP.refreshAccessToken();
+        if (!refreshed) {
+          alert("Sessione scaduta, effettua nuovamente l'accesso");
+          window.location.reload();
+          return null;
+        }
+      }
+      return await _API.call(endpoint, options, type);
+    }
     /**
      * Eseguo una richiesta fetch centralizzata con endpoint, opzioni e tipo di dato.
      * @param {string} endpoint - L'endpoint a cui fare la richiesta.
@@ -2556,7 +2772,7 @@ ${base64}
      * @param {Object} type - Contiene i tipi di ritorno e contenuto: { return_type, content_type }. (json, form-data, bin)
      * @returns {Promise<any|null>} - Restituisco il risultato della chiamata o null in caso di errore.
      */
-    static async fetch(endpoint, options = {}, type = {}) {
+    static async call(endpoint, options = {}, type = {}) {
       try {
         options.headers = options.headers || {};
         options.headers["x-client-type"] = "extension";
@@ -2567,10 +2783,8 @@ ${base64}
           options.headers["x-authentication-method"] = options.auth;
           delete options.auth;
         }
-        const integrity = await SHIV.getIntegrity(options.method, endpoint);
-        if (integrity) {
-          options.headers["X-Integrity"] = integrity;
-        }
+        options.headers["x-counter"] = _API.counter++;
+        SessionStorage.set("api-counter", _API.counter);
         if (options.queryParams) {
           endpoint += `?${options.queryParams}`;
           delete options.queryParams;
@@ -2646,192 +2860,15 @@ ${base64}
     }
   };
 
-  // core/service/passkey.public.service.js
-  var PasskeyService = class {
-    /**
-     * Fa firmare una challenge generata dal server per validare la passkey restituendo gli auth data
-     * @returns {object} request id (per identificare la richiesta) e auth data (per autenticarsi)
-     */
-    static async get_auth_data() {
-      const chl_req_id = await API.fetch(`/auth/passkey/`, {
-        method: "GET"
-      });
-      if (!chl_req_id) return false;
-      const { request_id, challenge: challenge_base64, credentials_id } = chl_req_id;
-      const challenge = Bytes.base64.decode(challenge_base64);
-      let allowCredentials = null;
-      if (credentials_id instanceof Array && credentials_id.length > 0) {
-        allowCredentials = credentials_id.map((cred_id) => ({
-          type: "public-key",
-          id: Bytes.base64.decode(cred_id, true),
-          transports: ["internal"]
-        }));
-      }
-      const publicKey = {
-        challenge,
-        userVerification: "preferred",
-        timeout: 6e4
-      };
-      if (allowCredentials) publicKey.allowCredentials = allowCredentials;
-      let credential = null;
-      try {
-        credential = await navigator.credentials.get({ publicKey });
-      } catch (error) {
-        console.warn("Passkey auth request Aborted", error);
-        return null;
-      }
-      const auth_data = {
-        request_id,
-        id: credential.id,
-        rawId: new Uint8Array(credential.rawId),
-        response: {
-          authenticatorData: new Uint8Array(credential.response.authenticatorData),
-          clientDataJSON: new Uint8Array(credential.response.clientDataJSON),
-          signature: new Uint8Array(credential.response.signature)
-        },
-        userHandle: credential.response.clientDataJSON.userHandle
-      };
-      return auth_data;
-    }
-    /**
-     * Effettua in maniera dinamica un'autenticazione tramite passkey indicando l'endpoint necessario
-     * @param {object} options 
-     * @param {string} [options.endpoint] qualsiasi endpoint del server
-     * @param {string} [options.method] POST, GET...
-     * @param {object} [options.body], dati 
-     * @returns {boolean}
-     */
-    static async authenticate(options) {
-      if (!options.endpoint) return false;
-      if (options.body && (options.body.request_id || options.body.auth_data)) throw new Error("Invalid options properties, request_id & auth_data can't be used in this context");
-      let auth_data = null;
-      let request_id = null;
-      let body = options.body ?? {};
-      const bypassToken = options.body?.bypassToken ? true : false;
-      const opt = {
-        method: "POST",
-        ...options
-      };
-      if (bypassToken === false) {
-        auth_data = await this.get_auth_data();
-        if (!auth_data) return auth_data;
-        request_id = auth_data.request_id;
-        delete auth_data.request_id;
-        body = {
-          ...body,
-          request_id,
-          auth_data: Bytes.base64.encode(msgpack_min_default.encode(auth_data))
-        };
-      }
-      const response = await API.fetch(opt.endpoint, {
-        method: opt.method,
-        body,
-        auth: "psk"
-      });
-      if (!response) return false;
-      return response;
-    }
-  };
-
-  // core/utils/cke.public.util.js
-  var CKE = class {
-    /**
-     * Inizializza localmente CKE, generando materiale locale e derivando la chiave
-     * @param {string} cookieMaterialHex
-     * @returns {Uint8Array} la chiave derivata
-     */
-    static async init(cookieMaterialHex) {
-      const rawCookieMaterial = Bytes.hex.decode(cookieMaterialHex);
-      const localMaterial = await Cripto.random_bytes(32);
-      await LocalStorage.set("cke-localMaterial", localMaterial);
-      const key = await this.deriveKey(rawCookieMaterial, localMaterial);
-      SessionStorage.set("cke-key", key);
-      return key;
-    }
-    /**
-     * Imposta una nuova chiave CKS
-     * @param {string} bypassToken - non obbligatoria, ma se viene passata, bypassa il controllo con la passkey
-     */
-    static async set(bypassToken = null) {
-      const res = await PasskeyService.authenticate({ endpoint: `/cke/set`, body: { bypassToken } });
-      const { basic, advanced } = res.new;
-      const basicBytes = Bytes.hex.decode(basic);
-      const advancedBytes = Bytes.hex.decode(advanced);
-      const localMaterial = Cripto.random_bytes(32);
-      LocalStorage.set("cke-localMaterial", localMaterial);
-      const keyBasic = await this.deriveKey(basicBytes, localMaterial);
-      const keyAdvanced = await this.deriveKey(advancedBytes, localMaterial);
-      SessionStorage.set("cke-key-basic", keyBasic);
-      SessionStorage.set("cke-key-advanced", keyAdvanced);
-      return { keyBasic, keyAdvanced };
-    }
-    /**
-     * Ottiene il materiale cookie e configura localmente la chiave
-     * @returns {null | Uint8Array}
-     */
-    static async getBasic() {
-      const localMaterial = await LocalStorage.get("cke-localMaterial");
-      if (!localMaterial) {
-        console.log("No local material founded");
-        return null;
-      }
-      const res = await API.fetch(`/cke/get/basic`, {
-        method: "GET"
-      });
-      if (!res) return null;
-      const cookieMaterial = Bytes.hex.decode(res.material);
-      const key = await this.deriveKey(cookieMaterial, localMaterial);
-      SessionStorage.set("cke-key-basic", key);
-      return key;
-    }
-    /**
-     * Restituisce la chiave avanzata
-     * @returns {Uint8Array}
-     */
-    static async getAdvanced() {
-      const localMaterial = await LocalStorage.get("cke-localMaterial");
-      if (!localMaterial) {
-        console.log("No local material founded");
-        return null;
-      }
-      const res = await PasskeyService.authenticate({
-        endpoint: `/cke/get/advanced`
-      });
-      if (!res) return null;
-      const cookieKey = Bytes.hex.decode(res.key);
-      const key = await this.deriveKey(cookieKey, localMaterial);
-      SessionStorage.set("cke-key-advanced", key);
-      return key;
-    }
-    /**
-     * Deriva la chiave usando HKDF
-     * @param {Uint8Array} cookieMaterial
-     * @param {Uint8Array} localMaterial
-     * @returns
-     */
-    static async deriveKey(cookieMaterial, localMaterial) {
-      return Cripto.HKDF(cookieMaterial, localMaterial);
-    }
-  };
-
   // core/service/auth.service.js
   var AuthService = class {
     /**
      * Inizializza la sessione calcolando la shared key
      */
     static async init() {
-      const sessionSharedSecret = SessionStorage.get("shared-secret");
-      if (sessionSharedSecret) {
-        console.log("Session already ok");
-        return true;
-      }
-      const keyBasic = await CKE.getBasic();
-      if (!keyBasic) return false;
-      const sharedSecret = await LocalStorage.get("shared-secret", keyBasic);
-      if (!sharedSecret) return false;
-      SessionStorage.set("shared-secret", sharedSecret);
-      console.log("SHIV started");
-      return this.startSession();
+      const popInitialized = await PoP.init();
+      const authInitialized = await this.startSessionWithPoP();
+      return popInitialized && authInitialized;
     }
     /**
      * Tenta di avviare automaticamente una sessione
@@ -2870,40 +2907,36 @@ ${base64}
      * Esegue l'accesso
      * @param {string} email
      * @param {string} password
-     * @param {boolean} [activate_lse=false] true per abilitare il protocollo lse
      * @returns {boolean}
      */
     static async signin(email, password) {
-      const publicKeyHex = await SHIV.generateKeyPair();
+      const publicKeyB64 = await PoP.generateKeyPair();
       const obfuscatedPassword = await Cripto.obfuscatePassword(password);
       const res = await API.fetch("/auth/signin", {
         method: "POST",
         body: {
           email,
           password: obfuscatedPassword,
-          publicKey: publicKeyHex
-        }
+          publicKey: publicKeyB64
+        },
+        skipRefresh: true
       });
       if (!res) return false;
-      const { dek: encodedDek, publicKey: serverPublicKey, bypassToken } = res;
-      const sharedSecret = await SHIV.completeHandshake(serverPublicKey);
-      if (!sharedSecret) return false;
-      const { keyBasic, keyAdvanced } = await CKE.set(bypassToken);
-      if (!keyBasic || !keyAdvanced) return false;
-      LocalStorage.set("shared-secret", sharedSecret, keyBasic);
+      const { dek: encodedDek } = res;
       const salt = Bytes.hex.decode(res.salt);
-      const KEK = await Cripto.deriveKey(password, salt);
+      const rawKEK = await Cripto.deriveKey(password, salt);
+      const KEK = await AES256GCM.importAesGcmKey(rawKEK, false);
       const encryptedDEK = Bytes.base64.decode(encodedDek);
-      const DEK = await AES256GCM.decrypt(encryptedDEK, KEK);
-      await LocalStorage.set("email-utente", email);
-      await LocalStorage.set("password-utente", password, KEK);
-      await LocalStorage.set("master-key", KEK, keyBasic);
-      await LocalStorage.set("DEK", DEK, keyBasic);
-      await LocalStorage.set("salt", salt, keyBasic);
-      SessionStorage.set("master-key", KEK);
-      SessionStorage.set("DEK", DEK);
-      SessionStorage.set("salt", salt);
-      SessionStorage.set("uid", res.uid);
+      const rawDEK = await AES256GCM.decrypt(encryptedDEK, KEK);
+      const DEK = await AES256GCM.importAesGcmKey(rawDEK, false);
+      SessionStorage.set(
+        "access-token-expiry",
+        new Date(Date.now() + 15 * 60 * 1e3)
+      );
+      LocalStorage.set("salt", salt);
+      LocalStorage.set("email", email);
+      await VaultService.keyStore.saveKey(KEK, "KEK");
+      await VaultService.keyStore.saveKey(DEK, "DEK");
       return true;
     }
     /**
@@ -2916,7 +2949,19 @@ ${base64}
       if (!res) return false;
       localStorage.clear();
       sessionStorage.clear();
-      await chrome.storage.session.clear();
+      return true;
+    }
+    /**
+     * Refresha l'access token in automatico usando la chiave privata pop
+     * @returns {boolean} true è stato loggato e la sessione è stata attivata, 0 già loggato, -1 nuovo access token non ottenuto, -2 nessuna chiave restituita, false sessione non attivata
+     */
+    static async startSessionWithPoP() {
+      const accessTokenExpiry = SessionStorage.get("access-token-expiry");
+      if (accessTokenExpiry) return true;
+      const accessTokenRefreshed = await PoP.refreshAccessToken();
+      if (!accessTokenRefreshed) return false;
+      SessionStorage.set("email", await LocalStorage.get("email"));
+      SessionStorage.set("salt", await LocalStorage.get("salt"));
       return true;
     }
   };
@@ -2990,7 +3035,8 @@ ${base64}
   };
 
   // core/service/vault.service.js
-  var VaultService = class _VaultService {
+  var VaultService2 = class _VaultService {
+    static keyStore = new KeyStore("VaultKeys");
     // POPUP VAR
     static info = null;
     // -----
@@ -3020,11 +3066,11 @@ ${base64}
      * @returns {boolean} - true se entrambi sono presenti
      */
     static async configSecrets() {
-      const ckeKeyAdvanced = SessionStorage.get("cke-key-basic");
-      if (ckeKeyAdvanced === null) return false;
-      this.KEK = await LocalStorage.get("master-key", ckeKeyAdvanced);
-      this.DEK = await LocalStorage.get("DEK", ckeKeyAdvanced);
-      this.salt = await LocalStorage.get("salt", ckeKeyAdvanced);
+      const accessTokenExpiry = SessionStorage.get("access-token-expiry");
+      if (accessTokenExpiry === null) return false;
+      this.KEK = await this.keyStore.loadKey("KEK");
+      this.DEK = await this.keyStore.loadKey("DEK");
+      this.salt = await LocalStorage.get("salt");
       return this.KEK && this.DEK && this.salt ? true : false;
     }
     /**
@@ -3035,7 +3081,7 @@ ${base64}
     static async syncronize(full = false) {
       const configured = await this.configSecrets();
       if (!configured)
-        return alert(2, "Any Crypto Key founded");
+        return alert("Nessuna chiave crittografica trovata, effettua il login.");
       const vault_update = await LocalStorage.get("vault-update") ?? null;
       let selectFrom = null;
       if (vault_update) selectFrom = new Date(Date.now() - this.getDateDiff);
@@ -3173,7 +3219,7 @@ ${base64}
       });
     }
   };
-  window.VaultService = VaultService;
+  window.VaultService = VaultService2;
 
   // core/service/secure-link.js
   var SecureLink = class {
@@ -3186,7 +3232,8 @@ ${base64}
      * @param {number} [options.ttl] * time to live
      */
     static async generate(options) {
-      const key = options.key || Cripto.randomBytes(32);
+      const rawKey = options.key instanceof Uint8Array ? options.key : Cripto.randomBytes(32);
+      const key = await AES256GCM.importAesGcmKey(rawKey);
       const data = msgpack_min_default.encode(options.data);
       const encrypted_data = await AES256GCM.encrypt(data, key);
       const res = await API.fetch("/secure-link/", {
@@ -3201,7 +3248,7 @@ ${base64}
       if (!res) return false;
       return {
         id: res.id,
-        key: Bytes.base64.encode(key, true)
+        key: Bytes.base64.encode(rawKey, true)
       };
     }
     /**
@@ -3226,7 +3273,8 @@ ${base64}
         method: "GET"
       });
       if (!res) return false;
-      const key = key_ instanceof Uint8Array ? key_ : Bytes.base64.decode(key_, true);
+      const rawKey = key_ instanceof Uint8Array ? key_ : Bytes.base64.decode(key_, true);
+      const key = await AES256GCM.importAesGcmKey(rawKey);
       const decoded_data = Bytes.base64.decode(res.data);
       const data = await AES256GCM.decrypt(decoded_data, key);
       return msgpack_min_default.decode(data);
@@ -3240,7 +3288,7 @@ ${base64}
     const sessionInitialized = await AuthService.init();
     if (sessionInitialized) {
       PopupUI.init(false);
-      VaultService.init();
+      VaultService2.init();
     } else {
       info.innerHTML = "Sign-in is needed";
       document.querySelector("#signin").addEventListener("submit", async (e) => {
@@ -3252,7 +3300,7 @@ ${base64}
           if (await AuthService.signin(email, password)) {
             e.target.reset();
             PopupUI.init(false);
-            VaultService.init();
+            VaultService2.init();
           }
         } catch (error) {
           alert("Errore durante l'accesso, verifica l'errore nelle informazioni");
@@ -3268,7 +3316,7 @@ ${base64}
     });
     document.getElementById("smartsync-btn").addEventListener("click", async () => {
       vaultInfo.innerHTML = "Downloading latest data from your vault...";
-      if (await VaultService.syncronize(false)) {
+      if (await VaultService2.syncronize(false)) {
         setTimeout(() => {
           vaultInfo.innerHTML = "Vault is up to date";
         }, 2e3);
@@ -3279,7 +3327,7 @@ ${base64}
     document.getElementById("fullsync-btn").addEventListener("click", async () => {
       if (!confirm("Are you sure you want to fully synchronize with the server?")) return;
       vaultInfo.innerHTML = "Downloading all data from your vault...";
-      if (await VaultService.syncronize(true)) {
+      if (await VaultService2.syncronize(true)) {
         setTimeout(() => {
           vaultInfo.innerHTML = "Vault is up to date";
         }, 2e3);
