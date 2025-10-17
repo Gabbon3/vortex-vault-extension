@@ -96,7 +96,7 @@ class PopupUI {
     static async init(logout = false) {
         document.querySelector("#signin").style.display = logout ? '' : "none";
         document.querySelector("#app").style.display = logout ? 'none' : "";
-        const email = await LocalStorage.get("email-utente");
+        const email = await LocalStorage.get("email");
         if (!email) return;
         document.querySelector("#user-email").textContent = email.split("@")[0];
     }

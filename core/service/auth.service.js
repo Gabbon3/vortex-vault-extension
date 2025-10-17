@@ -49,7 +49,7 @@ export class AuthService {
         const KEK = await LocalStorage.get('master-key', ckeKeyAdvanced);
         const DEK = await LocalStorage.get('DEK', ckeKeyAdvanced);
         const salt = await LocalStorage.get('salt', ckeKeyAdvanced);
-        const email = await LocalStorage.get('email-utente');
+        const email = await LocalStorage.get('email');
         if (!KEK || !DEK) return false;
         // ---
         SessionStorage.set('cke', ckeKeyAdvanced);
